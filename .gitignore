@@ -1,0 +1,18 @@
+# 자격증명·토큰 — 절대 커밋 금지
+.env.ls
+.env
+.env.*
+tools/logs/
+*.token
+.ls_token_*
+
+# 무한히 자라는 수집 데이터
+data/minbars.db
+data/*.db
+data/bars_recent.json
+data/signals.json
+data/multicum_*.csv
+data/sweep_results.csv
+
+__pycache__/
+*.pyc

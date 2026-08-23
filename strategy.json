@@ -1,0 +1,7 @@
+{
+ "selector": "qubo_sa",
+ "weights": "invvol",
+ "threshold": 2.0,
+ "iqr_fence": 1.5,
+ "ecm_gate": true
+}

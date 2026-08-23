@@ -1,0 +1,7 @@
+{
+ "connected": false,
+ "max_margin_ratio": 0.3,
+ "max_leverage": 3.0,
+ "max_contracts_per_pair": 1,
+ "require_stress_pass": true
+}

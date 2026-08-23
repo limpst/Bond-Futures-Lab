@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bond Futures Lab</title>
+<style>
+:root{--bg:#0b0f16;--panel:#141b28;--line:#243048;--text:#e8edf5;--mut:#8fa1ba;
+ --ok:#37b26f;--warn:#e0a53d;--crit:#ef6a5f;--acc:#4c94f7}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);
+ font:13.5px/1.6 "Segoe UI","Malgun Gothic",sans-serif;padding:18px;max-width:1080px;margin:auto}
+h1{font-size:19px}h3{margin:0 0 8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0}
+.badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;margin-right:6px}
+.b-dry{background:rgba(55,178,111,.15);color:var(--ok);border:1px solid var(--ok)}
+.b-live{background:rgba(239,106,95,.18);color:var(--crit);border:1px solid var(--crit)}
+.b-off{background:rgba(224,165,61,.15);color:var(--warn);border:1px solid var(--warn)}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:5px 8px;text-align:right}
+th{background:#1a2334}td:first-child,th:first-child{text-align:left}
+.sub{color:var(--mut);font-size:12px}
+canvas{width:100%;height:260px;background:#0e1420;border:1px solid var(--line);border-radius:8px}
+.sig-none{color:var(--mut)}.sig-on{color:var(--crit);font-weight:700}
+code{background:#1c2536;padding:1px 5px;border-radius:4px}
+</style>
+<body>
+<h1>🧪 Bond Futures Lab <span class="sub">— KTB + CME 채권 선물 · 델타원 z-score · 개인 소액 학습</span></h1>
+<div id="badges"></div>
+
+<div class="card">
+ <h3>📖 읽는 법 (처음 오셨나요?)</h3>
+ <p class="sub">① 아래 <b>시그널 표</b>가 심장이에요 — pair 마다 "지금 스프레드가 평소보다 얼마나 벌어졌나(z)"를 보여줘요. |z|≥2 이고 게이트(IQR·ECM)를 통과하면 시그널이 켜져요.
+ ② 차트는 두 상품을 시작=100 으로 맞춘 <b>비교 가능한 수치</b>예요 — 벌어졌다 좁혀지는 모양이 이 전략이 먹는 것.
+ ③ 주문은 기본 <b>dry(가상 기록)</b> — 실계좌 전환은 CLI 글로벌 스위치 + RMS 연결 후에만 가능해요.
+ 데이터가 없으면 "insufficient" 로 정직하게 표시돼요. 이 페이지는 <code>python -m http.server</code> 로 프로젝트 루트에서 열어야 데이터를 읽어요.</p>
+</div>
+
+<div class="card"><h3>🎯 시그널 <span class="sub" id="gen"></span></h3>
+ <table id="sig"><tr><th>pair</th><th>bars</th><th>β</th><th>z</th><th>IQR 위치</th>
+ <th>ECM γ</th><th>ECM t</th><th>lead-lag(봉)</th><th>시그널</th><th>비중</th></tr></table>
+ <p class="sub">게이트: |z|≥threshold ∧ IQR ∧ ECM(γ&lt;0, t≤−1.64). 전략 설정은 <code>strategy.json</code> (selector/weights/threshold) — 파일이 곧 '전략 선택 버튼'.</p>
+</div>
+
+<div class="card"><h3>📈 정규화 비교 차트 (시작=100)</h3>
+ <canvas id="chart" width="1040" height="260"></canvas>
+ <p class="sub" id="chart-note"></p>
+</div>
+
+<div class="card"><h3>🗺 로드맵 (정직하게)</h3>
+ <p class="sub">✅ LS Open API 토큰 3채널 · ✅ KTB3/KTB10 1분봉 실수집(t8461) · ✅ 시그널 엔진(z·IQR·ECM·lead-lag) · ✅ OMS dry 기록 + 글로벌 스위치 + RMS 게이트(차단 중)<br>
+ ⬜ CME 시세 — <b>계좌에 CME 시세 신청 필요</b>(현재 마스터에 HKEX·LME 만 보임) · ⬜ multicum sweep(봉 축적 후) · ⬜ TradingView 급 차트·호가(orderbook) — 실시간 WebSocket TR 연동 · ⬜ RMS(증거금·MR·leverage·스트레스) 연결 · ⬜ 실주문 TR (문서 대조·모의 검증 후)</p>
+</div>
+
+<script>
+async function jget(u){ try{ const r=await fetch(u); return r.ok? await r.json():null }catch(e){ return null } }
+(async ()=>{
+ const mode=await jget("execution_mode.json"), rms=await jget("rms_limits.json"),
+       st=await jget("strategy.json"), sig=await jget("data/signals.json"),
+       bars=await jget("data/bars_recent.json");
+ const b=document.getElementById("badges");
+ const m=(mode&&mode.mode)||"dry";
+ b.innerHTML=`<span class="badge ${m==="live"?"b-live":"b-dry"}">MODE: ${m.toUpperCase()}</span>`
+  +`<span class="badge ${rms&&rms.connected?"b-dry":"b-off"}">RMS: ${rms&&rms.connected?"연결":"미연결 — live 주문 전면 차단"}</span>`
+  +(st?`<span class="badge b-dry">선택기 ${st.selector} · 비중 ${st.weights} · z≥${st.threshold}</span>`:"");
+ if(sig){
+  document.getElementById("gen").textContent="· 생성(UTC) "+sig.generated_utc;
+  const t=document.getElementById("sig");
+  sig.pairs.forEach(p=>{
+   const tr=document.createElement("tr");
+   if(p.status){ tr.innerHTML=`<td>${p.pair}</td><td>${p.bars}</td><td colspan=7 class="sub">${p.status}</td><td></td>`; }
+   else tr.innerHTML=`<td>${p.pair}</td><td>${p.bars}</td><td>${p.beta}</td><td>${p.z}</td><td>${p.iqr_pos}</td>
+    <td>${p.ecm_gamma}</td><td>${p.ecm_t}</td><td>${p.leadlag_bars}</td>
+    <td class="${p.signal==="NONE"?"sig-none":"sig-on"}">${p.signal}</td><td>${p.weight??""}</td>`;
+   t.appendChild(tr);
+  });
+ }
+ if(bars){
+  const c=document.getElementById("chart"),x=c.getContext("2d");
+  const ids=Object.keys(bars); if(!ids.length) return;
+  const cols=["#4c94f7","#e0a53d","#37b26f","#ef6a5f","#8d9bf0","#d678ac"];
+  let lo=1e9,hi=-1e9;
+  ids.forEach(id=>bars[id].forEach(p=>{lo=Math.min(lo,p.norm);hi=Math.max(hi,p.norm)}));
+  const pad=(hi-lo)*0.08+1e-9; lo-=pad; hi+=pad;
+  x.clearRect(0,0,c.width,c.height);
+  ids.forEach((id,i)=>{
+   const s=bars[id]; x.strokeStyle=cols[i%6]; x.lineWidth=1.6; x.beginPath();
+   s.forEach((p,j)=>{ const px=j/(s.length-1)*(c.width-20)+10,
+     py=c.height-10-(p.norm-lo)/(hi-lo)*(c.height-20);
+     j?x.lineTo(px,py):x.moveTo(px,py); });
+   x.stroke(); x.fillStyle=cols[i%6]; x.font="12px sans-serif";
+   x.fillText(id, 12, 16+14*i);
+  });
+  document.getElementById("chart-note").textContent=
+   ids.map(id=>`${id}: ${bars[id].length}봉 · 마지막 ${bars[id].at(-1).t} = ${bars[id].at(-1).c}`).join("  ·  ");
+ }
+})();
+</script>
+</body>
+</html>
