@@ -16,3 +16,4 @@ data/sweep_results.csv
 
 __pycache__/
 *.pyc
+data/zseries.json
