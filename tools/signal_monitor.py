@@ -95,6 +95,7 @@ def main() -> int:
     out = {"generated_utc": f"{dt.datetime.now(dt.timezone.utc):%Y-%m-%d %H:%M:%S}",
            "strategy": cfg, "window_bars": a.window, "pairs": []}
     bars_export: dict[str, list] = {}
+    zseries: dict[str, list] = {}
     sig_pairs = []
 
     for p1, p2 in PAIRS:
@@ -143,6 +144,16 @@ def main() -> int:
         out["pairs"].append(info)
         if signal != "NONE":
             sig_pairs.append(info)
+
+        # z-score 시계열 (multicum 차트용) — 현재 β 고정 근사 + 롤링 창 w
+        full = [la[i] - beta * lb[i] for i in range(len(la))]
+        zs = []
+        for i in range(w, len(full)):
+            win = full[i - w:i]
+            mm = sum(win) / w
+            sdd = math.sqrt(max(1e-18, sum((v - mm) ** 2 for v in win) / w))
+            zs.append({"t": ts[i], "z": round((full[i] - mm) / sdd, 3)})
+        zseries[f"{p1}-{p2}"] = zs[-480:]
         for iid, ser in ((p1, s1), (p2, s2)):
             if iid not in bars_export:
                 base = ser[0][1]
@@ -167,6 +178,8 @@ def main() -> int:
         json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     (ROOT / "data" / "bars_recent.json").write_text(
         json.dumps(bars_export, ensure_ascii=False), encoding="utf-8")
+    (ROOT / "data" / "zseries.json").write_text(
+        json.dumps(zseries, ensure_ascii=False), encoding="utf-8")
     print(f"[signal] pairs={len(out['pairs'])} 시그널={len(sig_pairs)} "
           f"-> data/signals.json · bars_recent.json")
     for p in out["pairs"]:

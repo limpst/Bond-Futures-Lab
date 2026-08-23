@@ -29,7 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "data" / "minbars.db"
 
 PAIRS = [("KTB10", "ZN"), ("KTB3", "ZT"),
-         ("KTB3", "KTB10"), ("ZT", "ZN"), ("ZN", "ZB")]
+         ("KTB3", "KTB10"), ("KTB10", "KTB30"),
+         ("ZT", "ZN"), ("ZN", "ZB"), ("ZN", "TN")]
 FREQS = ["min", "day", "week", "month"]
 # 창(개월) → 주기별 봉 수 근사 (KRX 6.5h≈390분/일 · 21일/월 기준)
 WIN_BARS = {"min": {3: 63 * 390, 6: 126 * 390},

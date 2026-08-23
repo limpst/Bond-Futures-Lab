@@ -40,6 +40,11 @@ code{background:#1c2536;padding:1px 5px;border-radius:4px}
  <p class="sub">게이트: |z|≥threshold ∧ IQR ∧ ECM(γ&lt;0, t≤−1.64). 전략 설정은 <code>strategy.json</code> (selector/weights/threshold) — 파일이 곧 '전략 선택 버튼'.</p>
 </div>
 
+<div class="card"><h3>📉 multi-pair z-score on spread <span class="sub">— 모든 pair 겹쳐 보기 · 점선 = ±2σ 진입 threshold</span></h3>
+ <canvas id="zchart" width="1040" height="260"></canvas>
+ <p class="sub" id="z-note"></p>
+</div>
+
 <div class="card"><h3>📈 정규화 비교 차트 (시작=100)</h3>
  <canvas id="chart" width="1040" height="260"></canvas>
  <p class="sub" id="chart-note"></p>
@@ -72,6 +77,33 @@ async function jget(u){ try{ const r=await fetch(u); return r.ok? await r.json()
     <td class="${p.signal==="NONE"?"sig-none":"sig-on"}">${p.signal}</td><td>${p.weight??""}</td>`;
    t.appendChild(tr);
   });
+ }
+ const zs=await jget("data/zseries.json");
+ if(zs && Object.keys(zs).length){
+  const c=document.getElementById("zchart"),x=c.getContext("2d");
+  const cols=["#4c94f7","#e0a53d","#37b26f","#ef6a5f","#8d9bf0","#d678ac","#79c0ff"];
+  const pairs=Object.keys(zs).filter(k=>zs[k].length>1);
+  let lo=-3,hi=3;
+  pairs.forEach(p=>zs[p].forEach(d=>{lo=Math.min(lo,d.z);hi=Math.max(hi,d.z)}));
+  lo-=.3;hi+=.3;
+  const Y=v=>c.height-10-(v-lo)/(hi-lo)*(c.height-20);
+  x.clearRect(0,0,c.width,c.height);
+  // ±2σ threshold + 0선
+  [[2,"#ef6a5f"],[-2,"#ef6a5f"],[0,"#3a4a68"]].forEach(([v,col])=>{
+   x.strokeStyle=col;x.setLineDash(v?[6,5]:[2,4]);x.beginPath();
+   x.moveTo(10,Y(v));x.lineTo(c.width-10,Y(v));x.stroke();x.setLineDash([]);
+   x.fillStyle=col;x.font="11px sans-serif";x.fillText(v?`${v>0?"+":""}${v}σ`:"0",c.width-38,Y(v)-3);
+  });
+  pairs.forEach((p,i)=>{
+   const s=zs[p];x.strokeStyle=cols[i%7];x.lineWidth=1.5;x.beginPath();
+   s.forEach((d,j)=>{const px=j/(s.length-1)*(c.width-20)+10;
+    j?x.lineTo(px,Y(d.z)):x.moveTo(px,Y(d.z));});
+   x.stroke();x.fillStyle=cols[i%7];x.font="12px sans-serif";
+   x.fillText(`${p} (z=${s.at(-1).z})`,12,16+14*i);
+  });
+  document.getElementById("z-note").textContent=
+   pairs.map(p=>`${p}: ${zs[p].length}점 · 마지막 ${zs[p].at(-1).t}`).join("  ·  ")
+   +"  — |z|≥2 에서 진입 후보 (IQR·ECM 게이트 통과 시)";
  }
  if(bars){
   const c=document.getElementById("chart"),x=c.getContext("2d");

@@ -50,6 +50,8 @@ INSTRUMENTS = [
      "name": "KTB 3Y futures",  "underlying": "국고채 3년 바스켓",  "symbol": "A6569000"},
     {"instr_id": "KTB10", "market": "KRX", "channel": "kr_futopt",
      "name": "KTB 10Y futures", "underlying": "국고채 10년 바스켓", "symbol": "A6769000"},
+    {"instr_id": "KTB30", "market": "KRX", "channel": "kr_futopt",
+     "name": "KTB 30Y futures", "underlying": "국고채 30년 바스켓", "symbol": "A7069000"},
     {"instr_id": "ZT", "market": "CME", "channel": "os_futopt",
      "name": "2-Year T-Note futures",  "underlying": "US Treasury 2Y",  "symbol": "ZTU26"},
     {"instr_id": "ZF", "market": "CME", "channel": "os_futopt",
@@ -58,6 +60,9 @@ INSTRUMENTS = [
      "name": "10-Year T-Note futures", "underlying": "US Treasury 10Y", "symbol": "ZNU26"},
     {"instr_id": "ZB", "market": "CME", "channel": "os_futopt",
      "name": "30-Year T-Bond futures", "underlying": "US Treasury 30Y", "symbol": "ZBU26"},
+    {"instr_id": "TN", "market": "CME", "channel": "os_futopt",
+     "name": "Ultra 10-Year T-Note futures", "underlying": "US Treasury Ultra 10Y",
+     "symbol": "TNU26"},
 ]
 
 # ── TR 설정 (LS OpenAPI — 문서 대조 후 필요 시 여기만 수정) ──────────────────
@@ -117,6 +122,12 @@ CREATE TABLE IF NOT EXISTS collect_log(
   detail TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_minbar_time ON minbar(bar_time);
+CREATE TABLE IF NOT EXISTS universe_scan(
+  ts_utc TEXT NOT NULL,
+  bsc_cd TEXT NOT NULL, name TEXT, exch TEXT,
+  symbol TEXT, volume INTEGER, passed INTEGER
+);
+CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
 """
 
 
@@ -214,11 +225,11 @@ def do_discover(env) -> int:
 def do_live(env, minutes: int, count: int) -> int:
     con = open_db()
     rc = 0
-    for i in INSTRUMENTS:
-        ch, iid = i["channel"], i["instr_id"]
-        row = con.execute("SELECT symbol FROM instrument WHERE instr_id=?",
-                          (iid,)).fetchone()
-        sym = (row[0] if row and row[0] else i["symbol"]).strip()
+    # ★ 수집 대상은 DB(instrument, active=1) 기준 — --scan 이 편입한 종목까지 전부
+    targets = con.execute("SELECT instr_id, channel, symbol FROM instrument "
+                          "WHERE active=1 ORDER BY instr_id").fetchall()
+    for iid, ch, sym in targets:
+        sym = (sym or "").strip()
         if not sym:
             print(f"[live] {iid}: 월물 코드 미지정 — 건너뜀 (--discover 로 확인)")
             _log(con, iid, "", 0, 0, "error", "symbol not set")
@@ -273,6 +284,105 @@ def do_live(env, minutes: int, count: int) -> int:
     return rc
 
 
+def do_scan(env, min_vol: int) -> int:
+    """해외선물 유니버스 스캔 — 상품별 근월물 거래량을 읽어 거래량순 정렬,
+    min_vol 계약 이상은 전부 수집 대상으로 편입한다 (2026-08-23 지시: 50만+ 전부).
+
+    ※ 마스터(o3121)는 현재 계정에 반영된 거래소의 상품만 보여준다 — CME 시세가
+      API 유니버스에 반영되면 그날 스캔부터 자동으로 잡힌다. 거래량은 o3106
+      현재가의 당일 누적 계약 수 (휴장일에는 직전 세션 값/0 일 수 있음 — 한계).
+    """
+    con = open_db()
+    m = CONFIG["os_futopt"]["master"]
+    try:
+        j = call_tr("os_futopt", m["path"], m["tr_cd"], {m["in_block"]: m["body"]})
+    except Exception as e:
+        print(f"[scan] 마스터 조회 실패: {e}")
+        return 1
+    rows = j.get(m["out_block"], [])
+    if isinstance(rows, dict):
+        rows = [rows]
+    # 상품별 근월물: (연도, 월코드 순번) 최소값. LstngM 은 월 '문자'(F~Z)다.
+    MONTH_ORD = {c: i for i, c in enumerate("FGHJKMNQUVXZ", 1)}
+    prods: dict[str, dict] = {}
+    for r in rows:
+        cd = r.get("BscGdsCd", "")
+        yr = str(r.get("LstngYr") or "9999")
+        mo = MONTH_ORD.get(str(r.get("LstngM") or "").strip(), 99)
+        key = (int(yr) if yr.isdigit() else 9999, mo)
+        if cd and (cd not in prods or key < prods[cd]["_key"]):
+            prods[cd] = {"_key": key, "sym": r.get("Symbol", ""),
+                         "nm": r.get("BscGdsNm", ""), "ex": r.get("ExchCd", "")}
+    ranked = []
+    for cd, p in prods.items():
+        vol = 0
+        try:
+            q = call_tr("os_futopt", "/overseas-futureoption/market-data", "o3106",
+                        {"o3106InBlock": {"symbol": p["sym"]}})
+            vol = int((q.get("o3106OutBlock") or {}).get("volume") or 0)
+        except Exception:
+            pass
+        ranked.append((vol, cd, p))
+    ranked.sort(reverse=True)
+    print(f"[scan] 상품 {len(ranked)}종 — 거래량 내림차순 (기준 {min_vol:,} 계약):")
+    n_in = 0
+    for vol, cd, p in ranked:
+        passed = vol >= min_vol
+        mark = "✅ 편입" if passed else "  "
+        print(f"  {mark} {cd:5s} {p['ex']:5s} {p['sym']:8s} vol={vol:>10,}  {p['nm']}")
+        con.execute("INSERT INTO universe_scan(ts_utc,bsc_cd,name,exch,symbol,volume,passed) "
+                    "VALUES(?,?,?,?,?,?,?)",
+                    (_now(), cd, p["nm"], p["ex"], p["sym"], vol, int(passed)))
+        if passed:
+            con.execute(
+                "INSERT INTO instrument(instr_id,market,channel,name,underlying,symbol,active,updated_utc) "
+                "VALUES(?,?,?,?,?,?,1,?) "
+                "ON CONFLICT(instr_id) DO UPDATE SET symbol=excluded.symbol, active=1, "
+                "updated_utc=excluded.updated_utc",
+                (cd, p["ex"], "os_futopt", p["nm"], p["nm"], p["sym"], _now()))
+            n_in += 1
+    con.execute("INSERT INTO meta(k,v) VALUES('last_scan',?) "
+                "ON CONFLICT(k) DO UPDATE SET v=excluded.v", (_now()[:10],))
+    con.commit()
+    con.close()
+    print(f"[scan] {n_in}종 편입 (기존 채권 선물 유니버스는 유지)")
+    return 0
+
+
+def do_health() -> int:
+    """월요일 아침 원커맨드 점검 — KTB 봉 증가·CME 유입·최근 수집 상태·시그널."""
+    if not DB.is_file():
+        print("[health] DB 없음 — 수집 전")
+        return 1
+    con = sqlite3.connect(DB)
+    today = f"{dt.date.today()}"
+    print(f"[health] {_now()} UTC · DB {DB.name}")
+    print("  종목별 봉수 (전체 / 오늘):")
+    for iid, tot in con.execute("SELECT instr_id, COUNT(*) FROM minbar GROUP BY instr_id"):
+        td = con.execute("SELECT COUNT(*) FROM minbar WHERE instr_id=? AND bar_time LIKE ?",
+                         (iid, today + "%")).fetchone()[0]
+        print(f"    {iid:6s} {tot:>7,} / 오늘 {td:,}")
+    cme = con.execute("SELECT COUNT(*) FROM minbar WHERE instr_id IN "
+                      "('ZT','ZF','ZN','ZB','TN')").fetchone()[0]
+    print(f"  CME 유입: {'✅ ' + format(cme, ',') + '봉' if cme else '⬜ 아직 0 — API 유니버스 반영 대기'}")
+    print("  최근 수집 로그:")
+    for r in con.execute("SELECT ts_utc,instr_id,rows_in,rows_new,status FROM collect_log "
+                         "ORDER BY id DESC LIMIT 6"):
+        print(f"    {r}")
+    sig = ROOT / "data" / "signals.json"
+    if sig.is_file():
+        import json
+        s = json.loads(sig.read_text(encoding="utf-8"))
+        print(f"  시그널 (생성 {s.get('generated_utc')} UTC):")
+        for p in s.get("pairs", []):
+            if "z" in p:
+                print(f"    {p['pair']:12s} z={p['z']:+.2f} ecm_t={p['ecm_t']} -> {p['signal']}")
+    else:
+        print("  시그널: signals.json 없음 — python tools/signal_monitor.py 실행")
+    con.close()
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="KTB+CME 채권 선물 1분봉 수집기 (조회 전용)")
     ap.add_argument("--issue-token", action="store_true", help="채널별 토큰 발급 시험")
@@ -281,9 +391,21 @@ def main() -> int:
     ap.add_argument("--live", action="store_true", help="1분봉 실수집 → SQLite")
     ap.add_argument("--minutes", type=int, default=1, help="봉 주기 분 (기본 1)")
     ap.add_argument("--count", type=int, default=500, help="요청당 봉 수 (기본 500)")
+    ap.add_argument("--scan", action="store_true",
+                    help="해외 유니버스 스캔 — 거래량순 정렬·min-vol 이상 전부 편입")
+    ap.add_argument("--min-vol", type=int, default=500_000,
+                    help="스캔 편입 기준 계약 수 (기본 500,000)")
+    ap.add_argument("--scan-daily", action="store_true",
+                    help="--live 앞에 하루 1회 자동 스캔 (스케줄러용)")
+    ap.add_argument("--health", action="store_true",
+                    help="점검 원커맨드 — 봉 증가·CME 유입·수집 로그·시그널")
     a = ap.parse_args()
 
     env = load_env()
+    if a.health:
+        return do_health()
+    if a.scan:
+        return do_scan(env, a.min_vol)
     if a.issue_token:
         return do_issue_token(env)
     if a.init_db:
@@ -295,6 +417,12 @@ def main() -> int:
     if a.discover:
         return do_discover(env)
     if a.live:
+        if a.scan_daily:
+            con = open_db()
+            last = con.execute("SELECT v FROM meta WHERE k='last_scan'").fetchone()
+            con.close()
+            if not last or last[0] != f"{dt.date.today()}":
+                do_scan(env, a.min_vol)
         return do_live(env, a.minutes, a.count)
     return dry_run(env)                       # ★ 기본 = dry-run
 
