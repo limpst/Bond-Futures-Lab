@@ -116,6 +116,21 @@ def call_tr(channel: str, path: str, tr_cd: str, body: dict,
         json=body, timeout=30,
     )
     _last_call = time.time()
+    # 캐시가 '아직 유효' 라고 해도 서버가 토큰을 거부하는 경우가 실측된다
+    # (2026-08-24: 잔여 170분으로 계산된 캐시에 IGW00121). expires_in 을
+    # 그대로 믿지 말고, 거부당하면 한 번만 강제 재발급 후 재시도한다.
+    if r.status_code != 200 and "IGW00121" in r.text:
+        tok = issue_token(channel, force=True)
+        time.sleep(_MIN_INTERVAL)
+        r = requests.post(
+            f"{BASE}{path}",
+            headers={"content-type": "application/json; charset=UTF-8",
+                     "authorization": f"Bearer {tok}",
+                     "tr_cd": tr_cd, "tr_cont": tr_cont,
+                     "tr_cont_key": tr_cont_key},
+            json=body, timeout=30,
+        )
+        _last_call = time.time()
     if r.status_code != 200:
         raise RuntimeError(f"{tr_cd} HTTP {r.status_code}: {r.text[:300]}")
     j = r.json()
