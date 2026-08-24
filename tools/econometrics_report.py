@@ -150,3 +150,31 @@ rep = ROOT / "reports"
 rep.mkdir(exist_ok=True)
 (rep / "econ_20260824.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
 print("saved reports/econ_20260824.json")
+
+
+# -- daily 모드: 장 마감 후 하루 1행 JSONL 추가 (reports/econ_daily.jsonl) --
+def daily_append():
+    import datetime as _dt
+    logp = rep / "econ_daily.jsonl"
+    today = _dt.date.today().isoformat()
+    if logp.exists():
+        last = [l for l in logp.read_text(encoding="utf-8").splitlines() if l.strip()]
+        if last and json.loads(last[-1]).get("date") == today:
+            print("[daily] already logged for", today)
+            return
+    if _dt.datetime.now().hour < 15:
+        print("[daily] before close - skip")
+        return
+    row = {"date": today, "n_aligned": out["n_aligned"],
+           "adf_p": out["adf_level"]["p"],
+           "half_life_min": out["ou"]["half_life_bars"],
+           "ecm_gamma": out["ecm"]["gamma"],
+           "t_ols": out["ecm"]["t_ols"], "t_hac10": out["ecm"]["t_hac10"],
+           "spread_now": out["spread_now"], "z_now": out["z_now"]}
+    with open(logp, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    print("[daily] appended:", row)
+
+
+if "--daily" in sys.argv:
+    daily_append()

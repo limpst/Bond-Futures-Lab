@@ -5,7 +5,7 @@
   · 정규화 지수  각 상품 로그가격을 공통 구간 시작=100 으로 — multicum 식 비교
   · spread      ln(P1) − β·ln(P2) (β = 창 내 OLS, 직전 창)
   · z-score     (s − mean)/std   · IQR 위치  (s − median)/IQR
-  · ECM         Δs = α + γ·s(t−1) → γ, t-stat (되돌림 자격)
+  · ECM         Δs = α + γ·s(t−1) → γ, Newey-West t (되돌림 자격 — OLS t 는 부풀려짐)
   · lead-lag    cross-correlation argmax (±L 봉) — '시차를 두고 같은 방향'의 시차 추정
   · 마이크로     최근 봉 range·거래량, 세션 누적 거래량 (1분봉 기반 v0)
   · 시그널      |z| ≥ 2 이고 IQR 게이트·ECM 게이트 통과 → SHORT/LONG spread 후보
@@ -29,7 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-from deltaone_backtest import PAIRS, ecm_gamma, stats_window  # noqa: E402
+from deltaone_backtest import PAIRS, ecm_gamma_hac, stats_window  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "data" / "minbars.db"
@@ -120,7 +120,7 @@ def main() -> int:
         m, sd, med, iqr = stats_window(spread)
         z = (spread[-1] - m) / sd
         iqr_pos = (spread[-1] - med) / iqr if iqr > 1e-12 else 0.0
-        g, tstat = ecm_gamma(spread)
+        g, tstat = ecm_gamma_hac(spread)   # Newey-West t (2026-08-24 보고서 §5)
         lag, lc = xcorr_lag(la, lb)
         gate_iqr = cfg["iqr_fence"] <= 0 or abs(iqr_pos) >= cfg["iqr_fence"] * 0.5
         gate_ecm = (not cfg["ecm_gate"]) or (g < 0 and tstat <= -1.64)

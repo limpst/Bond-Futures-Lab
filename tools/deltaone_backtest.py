@@ -135,6 +135,36 @@ def ecm_gamma(spread: list[float]) -> tuple[float, float]:
     return g, g / se
 
 
+def ecm_gamma_hac(spread: list[float], maxlags: int | None = None) -> tuple[float, float]:
+    """Δs(t) = α + γ·s(t−1) — (γ, Newey-West t).
+
+    1분봉 spread 는 자기상관이 강해 OLS t 가 부풀려진다 (2026-08-24 기술
+    보고서: t_OLS −3.28 vs t_HAC −1.38). 게이트는 이 HAC t 를 쓴다.
+    maxlags 기본값: NW rule of thumb floor(4·(n/100)^(2/9)).
+    """
+    x = spread[:-1]
+    y = [spread[i + 1] - spread[i] for i in range(len(spread) - 1)]
+    n = len(x)
+    if n < 12:
+        return 0.0, 0.0
+    mx, my = sum(x) / n, sum(y) / n
+    vx = sum((v - mx) ** 2 for v in x)
+    if vx < 1e-14:
+        return 0.0, 0.0
+    g = sum((x[i] - mx) * (y[i] - my) for i in range(n)) / vx
+    a = my - g * mx
+    u = [x[i] - mx for i in range(n)]
+    e = [y[i] - a - g * x[i] for i in range(n)]
+    sc = [u[i] * e[i] for i in range(n)]           # score
+    L = maxlags if maxlags is not None else max(1, int(4 * (n / 100.0) ** (2.0 / 9.0)))
+    S = sum(v * v for v in sc)
+    for lag in range(1, L + 1):
+        w = 1.0 - lag / (L + 1.0)
+        S += 2.0 * w * sum(sc[i] * sc[i - lag] for i in range(lag, n))
+    se = math.sqrt(max(1e-18, S)) / vx
+    return g, g / se
+
+
 def backtest(ts, la, lb, w, thr, fence, use_ecm):
     """(trades, wins, pnl_series) — 모든 통계는 t−1 창으로 계산 (lookahead 금지)."""
     roll = Roll(w)
@@ -161,7 +191,7 @@ def backtest(ts, la, lb, w, thr, fence, use_ecm):
                     if abs(z) >= thr and gate_iqr:
                         ok = True
                         if use_ecm:
-                            g, t = ecm_gamma(list(hist))
+                            g, t = ecm_gamma_hac(list(hist))
                             ok = g < 0 and t <= ECM_T_CRIT
                         if ok:
                             pos = -1 if z > 0 else 1

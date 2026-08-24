@@ -1,9 +1,9 @@
 {
- "n_bars_raw": 1422,
- "n_aligned": 711,
+ "n_bars_raw": 2844,
+ "n_aligned": 1422,
  "span": [
   "2026-08-21 00:00:00",
-  "2026-08-21 23:59:00"
+  "2026-08-24 23:59:00"
  ],
  "symbols": [
   "A6569000",
@@ -13,33 +13,33 @@
  "spread_mean": -1.971,
  "spread_std": 0.0552,
  "adf_level": {
-  "stat": -1.929,
-  "p": 0.3183,
-  "lags": 9,
-  "nobs": 701,
-  "crit5": -2.866
+  "stat": -2.522,
+  "p": 0.1102,
+  "lags": 16,
+  "nobs": 1405,
+  "crit5": -2.864
  },
  "adf_diff": {
-  "stat": -11.919,
+  "stat": -11.833,
   "p": 0.0,
-  "lags": 8,
-  "nobs": 701,
-  "crit5": -2.866
+  "lags": 15,
+  "nobs": 1405,
+  "crit5": -2.864
  },
  "ou": {
-  "b_ar1": 0.97007,
-  "b_se": 0.00913,
-  "kappa_per_bar": 0.03039,
+  "b_ar1": 0.97008,
+  "b_se": 0.00645,
+  "kappa_per_bar": 0.03038,
   "half_life_bars": 22.8,
   "half_life_hours": 0.38,
-  "mu": -1.972,
-  "sigma_ou_per_bar": 0.01363,
-  "resid_sd": 0.01343
+  "mu": -1.971,
+  "sigma_ou_per_bar": 0.01362,
+  "resid_sd": 0.01341
  },
  "ecm": {
-  "gamma": -0.02993,
-  "t_ols": -3.28,
-  "t_hac10": -1.38
+  "gamma": -0.02992,
+  "t_ols": -4.64,
+  "t_hac10": -1.95
  },
  "micro": {
   "A6569000": {
@@ -48,7 +48,7 @@
    "amihud_x1e6": 0.101,
    "ofi_ratio": 0.005,
    "ofi_ac1": -0.16,
-   "vol_total": 69264,
+   "vol_total": 138528,
    "vol_bar_mean": 97.4
   },
   "A6769000": {
@@ -57,40 +57,40 @@
    "amihud_x1e6": 0.513,
    "ofi_ratio": 0.007,
    "ofi_ac1": -0.002,
-   "vol_total": 10751,
+   "vol_total": 21502,
    "vol_bar_mean": 15.1
   }
  },
  "z_now": 1.03,
  "z_window": 120,
  "acd": {
-  "n_events": 169,
-  "n_gaps": 6,
-  "dur_mean_min": 156.0,
-  "dur_median_min": 17.5,
-  "dur_cv": 2.02
+  "n_events": 339,
+  "n_gaps": 14,
+  "dur_mean_min": 363.9,
+  "dur_median_min": 19.0,
+  "dur_cv": 2.08
  },
  "sweep": [
   {
    "th": 1.0,
-   "trades": 1,
+   "trades": 3,
    "open_pos": 1,
-   "pnl_pts": 0.06,
-   "pnl_krw_1lot": 60000
+   "pnl_pts": 0.12,
+   "pnl_krw_1lot": 120000
   },
   {
    "th": 1.5,
-   "trades": 1,
+   "trades": 3,
    "open_pos": 1,
-   "pnl_pts": 0.06,
-   "pnl_krw_1lot": 60000
+   "pnl_pts": 0.12,
+   "pnl_krw_1lot": 120000
   },
   {
    "th": 2.0,
-   "trades": 1,
+   "trades": 3,
    "open_pos": 1,
-   "pnl_pts": 0.06,
-   "pnl_krw_1lot": 60000
+   "pnl_pts": 0.12,
+   "pnl_krw_1lot": 120000
   }
  ],
  "universe_scan": [
