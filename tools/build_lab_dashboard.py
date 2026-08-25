@@ -49,7 +49,7 @@ srows = "".join(
     f"<tr><td>{s['th']:.1f}σ</td><td>{s['trades']}</td><td>{'있음' if s['open_pos'] else '없음'}</td>"
     f"<td>{s['pnl_pts']:+.2f}</td><td>{s['pnl_krw_1lot']:+,}원</td></tr>" for s in sweep)
 
-HTML = """<title>Bond Futures Lab</title>
+HTML = """<title>Delta-One Spread Monitor</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
 <style>
 :root{--bg:#0B0E14;--panel:#121722;--panel2:#171E2C;--line:#232B3A;--text:#E8ECF4;
@@ -107,7 +107,10 @@ a{color:var(--teal)}
 </style>
 <div class="wrap">
 <header>
- <h1>Bond Futures Lab <span class="tag">— KTB Spread 실험 노트</span></h1>
+ <h1>델타원 스프레드 모니터 <span class="tag">— Bond Futures Lab</span></h1>
+ <p class="sub" style="font-size:14px;margin-top:6px"><b>한 줄 요약</b> — 한국 국채선물 10년물(KTB10)과 미국 국채선물 10년물(ZN)의
+ 가격 차이(spread)를 <b>1분마다</b> 보고, 그 차이가 평소보다 많이 벌어지면 알려주는 화면이에요.
+ 지금은 미국 쪽 데이터가 쌓이는 중이라, 같은 알고리즘을 한국 3년물–10년물(KTB3–KTB10)로 먼저 검정하고 있어요.</p>
  <p class="sub">개인 학습 실험 · 소액 · 자동 주문 없음 · 어떤 수치도 투자 권유 아님 — __STAMP__ 생성</p>
  <div class="badges">
   <span class="pill p-ok"><i></i>KTB 수집 가동 (실시간 WS + 5분 REST)</span>

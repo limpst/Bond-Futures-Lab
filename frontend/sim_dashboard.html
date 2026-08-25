@@ -1,4 +1,4 @@
-<title>Bond Futures Lab</title>
+<title>Delta-One Spread Monitor</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
 <style>
 :root{--bg:#0B0E14;--panel:#121722;--panel2:#171E2C;--line:#232B3A;--text:#E8ECF4;
@@ -56,13 +56,16 @@ a{color:var(--teal)}
 </style>
 <div class="wrap">
 <header>
- <h1>Bond Futures Lab <span class="tag">— KTB Spread 실험 노트</span></h1>
- <p class="sub">개인 학습 실험 · 소액 · 자동 주문 없음 · 어떤 수치도 투자 권유 아님 — 2026-08-25 11:39 생성</p>
+ <h1>델타원 스프레드 모니터 <span class="tag">— Bond Futures Lab</span></h1>
+ <p class="sub" style="font-size:14px;margin-top:6px"><b>한 줄 요약</b> — 한국 국채선물 10년물(KTB10)과 미국 국채선물 10년물(ZN)의
+ 가격 차이(spread)를 <b>1분마다</b> 보고, 그 차이가 평소보다 많이 벌어지면 알려주는 화면이에요.
+ 지금은 미국 쪽 데이터가 쌓이는 중이라, 같은 알고리즘을 한국 3년물–10년물(KTB3–KTB10)로 먼저 검정하고 있어요.</p>
+ <p class="sub">개인 학습 실험 · 소액 · 자동 주문 없음 · 어떤 수치도 투자 권유 아님 — 2026-08-25 21:01 생성</p>
  <div class="badges">
   <span class="pill p-ok"><i></i>KTB 수집 가동 (실시간 WS + 5분 REST)</span>
   <span class="pill p-crit"><i></i>CME 수집 정지 — 8/24 저녁 1시간분(11봉)뿐</span>
-  <span class="pill p-warn"><i></i>진입 게이트 미통과 — 오늘은 거래 안 함</span>
-  <span class="pill p-warn"><i></i>표본 1,430봉 (이틀) — 판정 유보 중</span>
+  <span class="pill p-ok"><i></i>진입 게이트 통과 (거래 자격 있음)</span>
+  <span class="pill p-warn"><i></i>표본 1,775봉 (이틀) — 판정 유보 중</span>
  </div>
 </header>
 
@@ -85,7 +88,7 @@ a{color:var(--teal)}
  <p class="lead">채권은 "나라가 돈을 갚겠다"는 약속 문서예요. <b>국채 선물</b>은 그 약속 문서를 <b>정해진 날짜에 정해진 값으로 사고팔기로 한 표준 계약</b>이고, 거래소에 상장돼 있어 주식처럼 사고팔 수 있어요. 이 실험실은 채권 선물 <b>딱 8개</b>만 봅니다.</p>
  <div class="card tblwrap"><table>
   <tr><th class="tx">시장</th><th class="tx">상품</th><th class="tx">쉬운 뜻</th><th class="tx">수집</th></tr>
-  <tr><td class="tx">KRX</td><td class="tx mono">KTB3 · KTB10 · KTB30</td><td class="tx">한국 국고채 3·10·30년 선물</td><td class="tx">🟢 1분봉 수집 중 (1,430봉)</td></tr>
+  <tr><td class="tx">KRX</td><td class="tx mono">KTB3 · KTB10 · KTB30</td><td class="tx">한국 국고채 3·10·30년 선물</td><td class="tx">🟢 1분봉 수집 중 (1,775봉)</td></tr>
   <tr><td class="tx">CME</td><td class="tx mono">ZT · ZF · ZN · ZB · TN</td><td class="tx">미국 국채 2·5·10·30년(+Ultra 10) 선물</td><td class="tx">🔴 정지 — 8/24 저녁 1시간분뿐</td></tr>
  </table></div>
  <div class="warnbox">본 pair는 <b>KTB10–ZN</b>(한미 10년)이지만 CME 표본이 아직 없어, 지금 분석은 ③순위 pair <b>KTB3–KTB10</b>으로 합니다. CME WebSocket 수집기가 상시화되면 자동으로 본 pair 표본이 쌓입니다.</div>
@@ -95,11 +98,11 @@ a{color:var(--teal)}
  <h2><span class="n">2</span>알고리즘이 뭐예요? — 고무줄 달린 공</h2>
  <p class="lead">두 나라(또는 두 만기)의 금리는 멀리 못 떨어져요 — 고무줄로 묶인 두 공 같아서, 많이 벌어지면 되돌아오는 경향이 있어요. 알고리즘은 딱 세 단계예요.</p>
  <div class="steps">
-  <div class="step"><span class="no">STEP 1</span><b>차이를 잰다</b><p>매 1분, 두 선물 가격의 차이(spread)를 기록해요. 지금: <span class="mono">-2.26 pt</span></p></div>
-  <div class="step"><span class="no">STEP 2</span><b>많이 벌어졌나 본다</b><p>평소(최근 2시간) 대비 몇 σ 벗어났는지(z-score) 계산. 지금: <span class="mono">z = -0.75</span> — ±2σ부터 진입 후보</p></div>
+  <div class="step"><span class="no">STEP 1</span><b>차이를 잰다</b><p>매 1분, 두 선물 가격의 차이(spread)를 기록해요. 지금: <span class="mono">-2.33 pt</span></p></div>
+  <div class="step"><span class="no">STEP 2</span><b>많이 벌어졌나 본다</b><p>평소(최근 2시간) 대비 몇 σ 벗어났는지(z-score) 계산. 지금: <span class="mono">z = -0.26</span> — ±2σ부터 진입 후보</p></div>
   <div class="step"><span class="no">STEP 3</span><b>자물쇠 3개를 확인하고 진입</b><p>① |z| ≥ 2σ ② 분포 기준(IQR)으로도 밖 ③ "되돌아온다"는 통계 증거(ECM, 보정 t ≤ −1.64) — <b>셋 다</b> 열려야 진입, 되돌아오면(z≈0) 청산</p></div>
  </div>
- <div class="warnbox">자물쇠 ③이 핵심 안전장치예요. 통계가 "되돌아온다는 증거가 부족하다"고 하면 <b>그날은 거래하지 않아요</b>. 지금이 바로 그 상태예요 (t_HAC = -1.50).</div>
+ <div class="warnbox">자물쇠 ③이 핵심 안전장치예요. 통계가 "되돌아온다는 증거가 부족하다"고 하면 <b>그날은 거래하지 않아요</b>. 지금이 바로 그 상태예요 (t_HAC = -2.78).</div>
 </section>
 
 <section>
@@ -107,7 +110,7 @@ a{color:var(--teal)}
  <p class="lead">같은 질문("되돌아오는 성질이 있나?")에 대한 답이 데이터가 쌓일 때마다 흔들려요. <b>이 흔들림이야말로 "아직 돈 걸면 안 된다"는 가장 확실한 증거</b>예요. 5영업일치가 쌓이면 판정이 안정되는지 봅니다.</p>
  <div class="card tblwrap"><table>
   <tr><th class="tx">시점</th><th>ADF p (≤.05 합격)</th><th>half-life</th><th>t_HAC (≤−1.64 통과)</th><th class="tx">판정</th></tr>
-  <tr><td class='tx'>8/24 보고 (711봉·하루)</td><td>0.318</td><td>23분</td><td>-1.38</td><td class='tx'>🟠 증거 부족</td></tr><tr><td class='tx'>2026-08-24 마감 기록 (1,422봉)</td><td>0.110</td><td>23분</td><td>-1.95</td><td class='tx'>🟢 게이트 통과</td></tr><tr><td class='tx'>지금 (1,430봉·진행 중)</td><td>0.557</td><td>5.2시간</td><td>-1.50</td><td class='tx'>🟠 증거 부족</td></tr>
+  <tr><td class='tx'>8/24 보고 (711봉·하루)</td><td>0.318</td><td>23분</td><td>-1.38</td><td class='tx'>🟠 증거 부족</td></tr><tr><td class='tx'>2026-08-24 마감 기록 (1,422봉)</td><td>0.110</td><td>23분</td><td>-1.95</td><td class='tx'>🟢 게이트 통과</td></tr><tr><td class='tx'>2026-08-25 마감 기록 (1,583봉)</td><td>0.537</td><td>302분</td><td>-1.64</td><td class='tx'>🟢 게이트 통과</td></tr><tr><td class='tx'>지금 (1,775봉·진행 중)</td><td>0.126</td><td>40분</td><td>-2.78</td><td class='tx'>🟢 게이트 통과</td></tr>
  </table></div>
 </section>
 
@@ -115,7 +118,7 @@ a{color:var(--teal)}
  <h2><span class="n">4</span>지금 시장 — spread와 z-score</h2>
  <div class="card chartbox"><canvas id="c1" height="210"></canvas></div>
  <div class="card chartbox" style="margin-top:12px"><canvas id="c2" height="150"></canvas></div>
- <p class="sub" style="margin-top:8px">위: spread(pt) — 노란 점선 = 장기 평균 μ. 아래: z-score — 붉은 띠 = ±2σ 진입선. 데이터: 실측 1분봉 1,430봉(주간+야간).</p>
+ <p class="sub" style="margin-top:8px">위: spread(pt) — 노란 점선 = 장기 평균 μ. 아래: z-score — 붉은 띠 = ±2σ 진입선. 데이터: 실측 1분봉 1,775봉(주간+야간).</p>
 </section>
 
 <section>
@@ -123,7 +126,7 @@ a{color:var(--teal)}
  <p class="lead">"몇 σ에서 들어가는 게 좋았을까"를 과거 데이터로 흉내낸 결과예요. <b>표본이 이틀뿐이라 성적표가 아니라 배관 점검</b> — 파이프라인이 끝까지 돈다는 확인용입니다.</p>
  <div class="card tblwrap"><table>
   <tr><th>진입 기준</th><th>완결 거래</th><th>미청산</th><th>손익 (pt)</th><th>손익 (1계약)</th></tr>
-  <tr><td>1.0σ</td><td>5</td><td>있음</td><td>+0.41</td><td>+409,999원</td></tr><tr><td>1.5σ</td><td>5</td><td>없음</td><td>+0.39</td><td>+389,999원</td></tr><tr><td>2.0σ</td><td>5</td><td>없음</td><td>+0.39</td><td>+389,999원</td></tr>
+  <tr><td>1.0σ</td><td>14</td><td>없음</td><td>+0.19</td><td>+189,999원</td></tr><tr><td>1.5σ</td><td>12</td><td>없음</td><td>+0.22</td><td>+219,999원</td></tr><tr><td>2.0σ</td><td>9</td><td>없음</td><td>+0.19</td><td>+189,999원</td></tr>
  </table></div>
  <div class="warnbox">비용(호가 스프레드 ≈0.003pt×2 + 수수료) 미반영 · 미청산 포지션은 현재가 평가 포함 · 대외 인용 금지.</div>
 </section>
@@ -137,14 +140,14 @@ a{color:var(--teal)}
  </div></details>
  <details><summary>OU process · half-life</summary><div class="dbody">
   <div class="f">ds_t = κ(μ − s_t)dt + σ dW_t &nbsp;→ 이산화 AR(1): s_t = a + b·s_{t−1} + ε_t</div>
-  <div class="f">κ = −ln(b)/Δt = 0.0022 /분 · half-life = ln2/κ = 314봉 · μ = a/(1−b) = -2.207 pt · b = 0.9978 (se 0.0017)</div>
+  <div class="f">κ = −ln(b)/Δt = 0.0173 /분 · half-life = ln2/κ = 40봉 · μ = a/(1−b) = -2.254 pt · b = 0.9829 (se 0.0045)</div>
  </div></details>
  <details><summary>ECM과 Newey-West 보정 (왜 t가 두 개인가)</summary><div class="dbody">
-  <div class="f">Δs_t = α + γ·s_{t−1} + ε_t, &nbsp;γ̂ = -0.0022 · t_OLS = -1.27 · t_HAC(NW) = -1.50</div>
+  <div class="f">Δs_t = α + γ·s_{t−1} + ε_t, &nbsp;γ̂ = -0.0171 · t_OLS = -3.82 · t_HAC(NW) = -2.78</div>
   <p class="sub">1분봉 잔차는 자기상관이 강해 OLS 표준오차가 과소평가된다(t 과대). Newey-West(자동 lag)로 보정한 t만 게이트에 사용. 8/24 기술 보고서 §5의 finding.</p>
  </div></details>
  <details><summary>ADF 정상성 검정</summary><div class="dbody">
-  <div class="f">Δs_t = α + ρ·s_{t−1} + Σφ_iΔs_{t−i} + ε_t, &nbsp;H₀: ρ=0(단위근) · 지금 stat -1.45, p 0.557 (lag AIC)</div>
+  <div class="f">Δs_t = α + ρ·s_{t−1} + Σφ_iΔs_{t−i} + ε_t, &nbsp;H₀: ρ=0(단위근) · 지금 stat -2.46, p 0.126 (lag AIC)</div>
   <p class="sub">p ≤ 0.05일 때만 "되돌아오는 성질"을 통계적으로 인정. 재현: <span class="mono">python tools/econometrics_report.py</span> → <a href="https://www.notion.so/3c66585be6ea8087a1a6d571d4c01e51">기술 보고서</a></p>
  </div></details>
 </section>
@@ -186,7 +189,7 @@ function draw(id, vals, opts){
  x.fillStyle=opts.color; x.beginPath(); x.arc(X(N-1),Y(vals[N-1]),3.4,0,7); x.fill();
 }
 function render(){
- draw("c1", CH.s, {color:"#3FD0C9", fill:"rgba(63,208,201,.16)", dec:2, mu:-2.207});
+ draw("c1", CH.s, {color:"#3FD0C9", fill:"rgba(63,208,201,.16)", dec:2, mu:-2.254});
  draw("c2", CH.z, {color:"#F5B84B", fill:"rgba(245,184,75,.14)", dec:1, band:2});
 }
 render(); addEventListener("resize", render);
