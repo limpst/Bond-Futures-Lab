@@ -28,6 +28,8 @@ scan = pd.read_sql("SELECT name, exch, symbol, volume, passed FROM universe_scan
 print("symbols:", bars["symbol"].unique(), "| rows:", len(bars))
 
 bars["bar_time"] = pd.to_datetime(bars["bar_time"])
+PAIR = ("A6569000", "A6769000")   # KTB3, KTB10 — CME 심볼 유입과 무관하게 고정
+bars = bars[bars["symbol"].isin(PAIR)]
 px = bars.pivot_table(index="bar_time", columns="symbol", values="close").dropna()
 vol = bars.pivot_table(index="bar_time", columns="symbol", values="volume").reindex(px.index)
 syms = list(px.columns)
@@ -35,6 +37,9 @@ s3, s10 = syms[0], syms[1]  # KTB3, KTB10 (확인 출력)
 print("aligned bars:", len(px), "| cols:", syms, "|", px.index.min(), "->", px.index.max())
 
 spread = (px[s3] - px[s10]).rename("spread")
+if len(px) < 100 or float(spread.std()) < 1e-9:
+    print(f"[skip] insufficient/constant data (n={len(px)}) - no report")
+    sys.exit(0)
 out = {"n_bars_raw": int(len(bars)), "n_aligned": int(len(px)),
        "span": [str(px.index.min()), str(px.index.max())],
        "symbols": syms,
