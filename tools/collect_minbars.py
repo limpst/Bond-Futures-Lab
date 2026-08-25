@@ -249,10 +249,23 @@ def do_live(env, minutes: int, count: int) -> int:
                 rows = [rows]
             f = c["fields"]
             new = 0
-            # t8461 은 날짜가 없다 — 최근 KRX 세션 날짜로 합성 (야간 근사 한계)
-            sess = dt.date.today()
-            while sess.weekday() >= 5:
-                sess -= dt.timedelta(days=1)
+            # t8461 은 날짜 필드가 없다. 예전에는 '최근 평일' 하나로 전 봉을 눌러
+            # 담았는데, 야간 세션(18:00~익일 05:00)이 자정을 넘기므로 18:00~23:59
+            # 블록과 00:00~05:59 블록이 같은 날짜가 되어 시계열이 06:00 -> 18:01 로
+            # 12시간 거꾸로 점프했다(2026-08-24 실측: 그 이음매의 가격 변화가 표본
+            # 전체 최대값 = AR(1)/ADF/ECM 을 직접 오염).
+            #
+            # 고친 방식: 응답은 최신 봉이 먼저 온다. 최신 봉을 '지금 날짜'에 걸고
+            # 과거로 내려가다가 시각이 되레 커지면(예: 00:00 -> 23:59) 자정을
+            # 거꾸로 넘은 것이므로 날짜를 하루 뺀다.
+            now = dt.datetime.now()
+            sess = now.date()
+            if rows:
+                t0 = str(rows[0].get(f["time"], "")).zfill(6)
+                # 최신 봉이 현재 시각보다 뚜렷이 앞서면 지난 날의 자료다
+                if t0 > (now + dt.timedelta(minutes=2)).strftime("%H%M%S"):
+                    sess -= dt.timedelta(days=1)
+            prev_t = None
             for r in rows:
                 t = str(r.get(f["time"], "")).zfill(6)
                 if f["date"]:
@@ -260,12 +273,18 @@ def do_live(env, minutes: int, count: int) -> int:
                     if len(d) != 8:
                         continue
                 else:
+                    if prev_t is not None and t > prev_t:
+                        sess -= dt.timedelta(days=1)      # 자정을 거꾸로 넘음
+                    prev_t = t
                     d = f"{sess:%Y%m%d}"
                 bar = f"{d[:4]}-{d[4:6]}-{d[6:]} {t[:2]}:{t[2:4]}"
                 cur = con.execute(
                     "INSERT INTO minbar(instr_id,bar_time,open,high,low,close,volume,symbol,collected_utc) "
                     "VALUES(?,?,?,?,?,?,?,?,?) "
-                    "ON CONFLICT(instr_id,bar_time) DO NOTHING",
+                    "ON CONFLICT(instr_id,bar_time) DO UPDATE SET "
+                    "open=excluded.open,high=excluded.high,low=excluded.low,"
+                    "close=excluded.close,volume=excluded.volume,"
+                    "collected_utc=excluded.collected_utc",
                     (iid, bar,
                      float(r.get(f["open"], 0) or 0), float(r.get(f["high"], 0) or 0),
                      float(r.get(f["low"], 0) or 0), float(r.get(f["close"], 0) or 0),

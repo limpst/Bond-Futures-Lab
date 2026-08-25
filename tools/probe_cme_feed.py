@@ -1,9 +1,17 @@
 # -*- coding: utf-8 -*-
 """LS Open API 해외선물옵션 채널 — CME 시세가 실제로 흐르는지 진단한다.
 
-배경: 계좌에 CME 시세를 신청해 두었으나 "API 유니버스 반영 대기" 상태였다.
-반영 여부는 마스터(o3121)에 CME 상품이 나오는지, 그리고 현재가(o3106)와
-차트(o3103)가 값을 주는지로 판정된다. 이 스크립트가 그 판정을 한다.
+배경: 계좌에 CME 시세를 신청해 두었다. 처음에는 REST 조회(o3121/o3106/o3103)만
+보고 "미반영" 이라고 판정했는데 그것은 틀렸다 — 2026-08-24 실측으로
+**실시간 WebSocket(OVC/OVH)은 정상 수신**됨을 확인했다. 같은 계정에서
+경로에 따라 갈린다:
+
+  REST  o3121 마스터 → HKEX·LME 만, CME 0종
+        o3106 현재가 → 빈 응답 · o3103 차트 → 0봉
+  WS    OVC/OVH      → 정상 수신 (ZNU26 108.421875 등)
+
+그래서 이 스크립트는 **두 축을 모두** 보고 판정한다. REST 만 보고 결론내면
+"CME 를 못 받는다" 는 잘못된 결론에 도달한다.
 
 조회 전용이다 — 주문 TR 은 호출하지 않는다.
 자격증명 값은 어떤 출력에도 찍지 않는다.
@@ -124,6 +132,46 @@ def probe_chart(sym):
         print("  → 봉이 0개. 시세 미반영이거나 휴장/심볼 불일치.")
 
 
+def probe_ws(syms, secs: int = 12):
+    """실시간 WebSocket(OVC) 으로 tick 이 오는지 — REST 와 독립적으로 판정한다."""
+    hr("5. 실시간 WebSocket (OVC) — REST 와 별개 축")
+    try:
+        import asyncio, json as _json, websockets
+    except ImportError:
+        print("  websockets 미설치 — 이 축은 건너뜁니다 (pip install websockets)")
+        return False, "미확인(websockets 없음)"
+
+    async def _run():
+        tok = issue_token(CH)
+        got = {}
+        async with websockets.connect("wss://openapi.ls-sec.co.kr:9443/websocket",
+                                      ping_interval=20, close_timeout=5) as ws:
+            for s in syms:
+                await ws.send(_json.dumps({"header": {"token": tok, "tr_type": "3"},
+                                           "body": {"tr_cd": "OVC", "tr_key": s.ljust(8)}}))
+                await asyncio.sleep(0.2)
+            end = asyncio.get_event_loop().time() + secs
+            while asyncio.get_event_loop().time() < end:
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=3)
+                except asyncio.TimeoutError:
+                    continue
+                b = (_json.loads(raw).get("body") or {})
+                sym = str(b.get("symbol") or "").strip()
+                if sym and b.get("curpr"):
+                    got[sym] = b.get("curpr")
+        return got
+
+    try:
+        got = asyncio.run(_run())
+    except Exception as e:
+        print("  실패: %s" % str(e)[:120])
+        return False, "실패"
+    for s in syms:
+        print("  %-8s %s" % (s, ("✓ %s" % got[s]) if s in got else "— 수신 없음"))
+    return bool(got), ("%d/%d 수신" % (len(got), len(syms)))
+
+
 def main():
     syms = sys.argv[1:] or DEFAULT_SYMS
     print("LS Open API 해외선물옵션(os_futopt) 채널 진단")
@@ -132,16 +180,21 @@ def main():
     exch = probe_master()
     live = probe_quote(syms)
     probe_chart(live[0] if live else syms[0])
+    ws_ok, ws_detail = probe_ws(syms[:3])
     hr("판정")
     cme_open = any(e.upper() in ("CME", "CBOT", "NYMEX", "COMEX", "CBT") for e in exch)
-    print("  마스터에 CME 계열: %s" % ("있음 ✓" if cme_open else "없음 ✗"))
-    print("  현재가 수신 심볼 : %d/%d  %s" % (len(live), len(syms), " ".join(live)))
-    if cme_open and live:
-        print("  → CME 시세가 API 에 반영되어 있습니다. 백필 착수 가능.")
-    elif exch and not cme_open:
-        print("  → 계정은 살아 있으나 CME 계열이 유니버스에 없습니다. 시세 신청 반영 대기.")
+    print("  [REST] 마스터에 CME 계열: %s" % ("있음 ✓" if cme_open else "없음 ✗"))
+    print("  [REST] 현재가 수신 심볼 : %d/%d  %s" % (len(live), len(syms), " ".join(live)))
+    print("  [WS]   실시간 수신       : %s" % ws_detail)
+    if ws_ok and not cme_open:
+        print("  → CME 는 **실시간 WebSocket 으로 정상 수신**됩니다. REST 조회 계열만 막혀 있습니다.")
+        print("     수집은 tools/collect_cme_ws.py (OVC tick → 1분봉) 로 하십시오.")
+    elif ws_ok and cme_open:
+        print("  → REST·WS 양쪽 모두 정상입니다.")
+    elif cme_open and live:
+        print("  → REST 는 되는데 실시간이 안 옵니다. 휴장 시간인지 먼저 확인하십시오.")
     else:
-        print("  → 해외선물 시세 자체가 열려 있지 않습니다.")
+        print("  → 양쪽 모두 수신 없음. 휴장이거나 시세 신청이 반영되지 않았습니다.")
     return 0
 
 
