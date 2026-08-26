@@ -39,6 +39,18 @@ ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "data" / "minbars.db"
 
 
+def _sqlite_connect_safe(*args, **kwargs):
+    """랩 공통 커넥션 — 락을 만나면 죽지 않고 기다린다(2026-08-26 사고 대응)."""
+    import sqlite3 as _s3
+    kwargs.setdefault("timeout", 60)
+    _c = _s3.connect(*args, **kwargs)
+    try:
+        _c.execute("PRAGMA busy_timeout=60000")
+    except Exception:
+        pass
+    return _c
+
+
 def in_window(now: dt.time, start: dt.time, end: dt.time) -> bool:
     """자정을 넘는 구간(예: 18:00~05:00)도 처리한다."""
     if start <= end:
@@ -65,7 +77,7 @@ def main() -> int:
     if not DB.is_file():
         print("DB 없음: %s" % DB)
         return 1
-    con = sqlite3.connect(DB, timeout=60)
+    con = _sqlite_connect_safe(DB, timeout=60)
     con.row_factory = sqlite3.Row
     now = dt.datetime.now()
     rows = {r["instr_id"]: (r["market"], r["last"]) for r in con.execute(

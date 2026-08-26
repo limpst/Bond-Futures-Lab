@@ -131,9 +131,21 @@ CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
 """
 
 
+def _sqlite_connect_safe(*args, **kwargs):
+    """랩 공통 커넥션 — 락을 만나면 죽지 않고 기다린다(2026-08-26 사고 대응)."""
+    import sqlite3 as _s3
+    kwargs.setdefault("timeout", 60)
+    _c = _s3.connect(*args, **kwargs)
+    try:
+        _c.execute("PRAGMA busy_timeout=60000")
+    except Exception:
+        pass
+    return _c
+
+
 def open_db() -> sqlite3.Connection:
     DB.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB, timeout=60)
+    con = _sqlite_connect_safe(DB, timeout=60)
     con.executescript(SCHEMA)
     for ins in INSTRUMENTS:
         con.execute(
@@ -373,7 +385,7 @@ def do_health() -> int:
     if not DB.is_file():
         print("[health] DB 없음 — 수집 전")
         return 1
-    con = sqlite3.connect(DB, timeout=60)
+    con = _sqlite_connect_safe(DB, timeout=60)
     today = f"{dt.date.today()}"
     print(f"[health] {_now()} UTC · DB {DB.name}")
     print("  종목별 봉수 (전체 / 오늘):")

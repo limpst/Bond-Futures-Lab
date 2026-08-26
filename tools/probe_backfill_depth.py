@@ -30,8 +30,20 @@ from ls_openapi import call_tr, load_env  # noqa: E402
 from collect_minbars import CONFIG  # noqa: E402
 
 
+def _sqlite_connect_safe(*args, **kwargs):
+    """랩 공통 커넥션 — 락을 만나면 죽지 않고 기다린다(2026-08-26 사고 대응)."""
+    import sqlite3 as _s3
+    kwargs.setdefault("timeout", 60)
+    _c = _s3.connect(*args, **kwargs)
+    try:
+        _c.execute("PRAGMA busy_timeout=60000")
+    except Exception:
+        pass
+    return _c
+
+
 def sym_of(instr_id):
-    con = sqlite3.connect(ROOT / "data" / "minbars.db", timeout=60)
+    con = _sqlite_connect_safe(ROOT / "data" / "minbars.db", timeout=60)
     r = con.execute("SELECT channel, symbol FROM instrument WHERE instr_id=?",
                     (instr_id,)).fetchone()
     con.close()

@@ -43,6 +43,18 @@ sys.path.insert(0, str(ROOT / "tools"))
 DB = ROOT / "data" / "minbars.db"
 
 
+def _sqlite_connect_safe(*args, **kwargs):
+    """랩 공통 커넥션 — 락을 만나면 죽지 않고 기다린다(2026-08-26 사고 대응)."""
+    import sqlite3 as _s3
+    kwargs.setdefault("timeout", 60)
+    _c = _s3.connect(*args, **kwargs)
+    try:
+        _c.execute("PRAGMA busy_timeout=60000")
+    except Exception:
+        pass
+    return _c
+
+
 def api_roundtrip(n=15, symbol="A6769000"):
     """A. 읽기 전용 TR 왕복 — 주문 지연의 하한."""
     from ls_openapi import call_tr
@@ -61,7 +73,7 @@ def api_roundtrip(n=15, symbol="A6769000"):
 
 def quote_gaps(instr="KTB10", limit=3000):
     """B. 호가 갱신 간격(초). 초 단위 PK 라 같은 초는 하나로 합쳐진 값이다."""
-    c = sqlite3.connect(DB, timeout=60)
+    c = _sqlite_connect_safe(DB, timeout=60)
     rows = [r[0] for r in c.execute(
         "SELECT ts FROM quote WHERE instr_id=? ORDER BY ts DESC LIMIT ?", (instr, limit))]
     rows.reverse()
@@ -72,7 +84,7 @@ def quote_gaps(instr="KTB10", limit=3000):
 
 def l1_refill(instr="KTB10", limit=3000):
     """C. L1 잔량이 직전 대비 절반 이하로 준 뒤, 원래 수준을 회복하기까지의 시간."""
-    c = sqlite3.connect(DB, timeout=60)
+    c = _sqlite_connect_safe(DB, timeout=60)
     c.row_factory = sqlite3.Row
     rows = list(c.execute(
         "SELECT ts,bq1,aq1 FROM quote WHERE instr_id=? ORDER BY ts DESC LIMIT ?",

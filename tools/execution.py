@@ -56,6 +56,18 @@ CREATE TABLE IF NOT EXISTS oms_order(
 """
 
 
+def _sqlite_connect_safe(*args, **kwargs):
+    """랩 공통 커넥션 — 락을 만나면 죽지 않고 기다린다(2026-08-26 사고 대응)."""
+    import sqlite3 as _s3
+    kwargs.setdefault("timeout", 60)
+    _c = _s3.connect(*args, **kwargs)
+    try:
+        _c.execute("PRAGMA busy_timeout=60000")
+    except Exception:
+        pass
+    return _c
+
+
 def get_mode() -> str:
     if MODE_FILE.is_file():
         try:
@@ -95,7 +107,7 @@ def rms_check(order: dict) -> tuple[bool, str]:
 
 def place_pair_order(pair: str, action: str, legs: list[dict], reason: str) -> str:
     """스프레드 양다리 주문 한 건. mode 에 따라 dry 기록 또는 live 게이트."""
-    con = sqlite3.connect(DB, timeout=60)
+    con = _sqlite_connect_safe(DB, timeout=60)
     con.executescript(SCHEMA)
     mode = get_mode()
     row = {
@@ -159,7 +171,7 @@ def main() -> int:
           f"· MR≤{lim['max_margin_ratio']} · lev≤{lim['max_leverage']} "
           f"· pair당 {lim['max_contracts_per_pair']}계약")
     if DB.is_file():
-        con = sqlite3.connect(DB, timeout=60)
+        con = _sqlite_connect_safe(DB, timeout=60)
         try:
             n = con.execute("SELECT COUNT(*) FROM oms_order").fetchone()[0]
             last = con.execute("SELECT ts_utc,mode,pair,action,status FROM oms_order "

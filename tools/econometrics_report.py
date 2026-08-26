@@ -20,7 +20,7 @@ from statsmodels.tsa.stattools import adfuller
 import statsmodels.api as sm
 
 ROOT = Path(__file__).resolve().parent.parent
-con = sqlite3.connect(ROOT / "data" / "minbars.db")
+con = _sqlite_connect_safe(ROOT / "data" / "minbars.db")
 
 bars = pd.read_sql("SELECT symbol, bar_time, open, high, low, close, volume FROM minbar", con)
 inst = pd.read_sql("SELECT * FROM instrument", con)
@@ -158,6 +158,18 @@ print("saved reports/econ_20260824.json")
 
 
 # -- daily 모드: 장 마감 후 하루 1행 JSONL 추가 (reports/econ_daily.jsonl) --
+def _sqlite_connect_safe(*args, **kwargs):
+    """랩 공통 커넥션 — 락을 만나면 죽지 않고 기다린다(2026-08-26 사고 대응)."""
+    import sqlite3 as _s3
+    kwargs.setdefault("timeout", 60)
+    _c = _s3.connect(*args, **kwargs)
+    try:
+        _c.execute("PRAGMA busy_timeout=60000")
+    except Exception:
+        pass
+    return _c
+
+
 def daily_append():
     import datetime as _dt
     logp = rep / "econ_daily.jsonl"

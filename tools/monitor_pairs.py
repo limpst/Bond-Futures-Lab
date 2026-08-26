@@ -45,9 +45,21 @@ CREATE TABLE IF NOT EXISTS pair_history(
 PAIRS = [("KTB3", "KTB10"), ("KTB10", "ZN")]
 
 
+def _sqlite_connect_safe(*args, **kwargs):
+    """랩 공통 커넥션 — 락을 만나면 죽지 않고 기다린다(2026-08-26 사고 대응)."""
+    import sqlite3 as _s3
+    kwargs.setdefault("timeout", 60)
+    _c = _s3.connect(*args, **kwargs)
+    try:
+        _c.execute("PRAGMA busy_timeout=60000")
+    except Exception:
+        pass
+    return _c
+
+
 def record():
     import econ_pair as EP
-    con = sqlite3.connect(DB, timeout=60)
+    con = _sqlite_connect_safe(DB, timeout=60)
     con.execute(SCHEMA); con.commit()
     now = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     for a, b in PAIRS:
@@ -72,7 +84,7 @@ def record():
 
 
 def show():
-    con = sqlite3.connect(DB, timeout=60)
+    con = _sqlite_connect_safe(DB, timeout=60)
     con.row_factory = sqlite3.Row
     try:
         rows = list(con.execute("SELECT * FROM pair_history ORDER BY pair, ts"))

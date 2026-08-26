@@ -1,10 +1,10 @@
 {
- "asof": "2026-08-26 13:42:26",
+ "asof": "2026-08-26 14:41:03",
  "kr_reach_min": 900,
- "backfilled_bars": 2,
+ "backfilled_bars": 15,
  "gained": {
-  "KTB10": 1,
-  "KTB3": 1,
+  "KTB10": 8,
+  "KTB3": 7,
   "KTB30": 0,
   "TN": 0,
   "ZB": 0,
@@ -13,7 +13,7 @@
   "ZT": 0
  },
  "closed_gaps": 0,
- "open_recoverable": 4,
+ "open_recoverable": 5,
  "open_permanent": 15,
  "permanent_gaps": [
   {
@@ -260,16 +260,16 @@
  "instruments": {
   "KTB10": {
    "instr_id": "KTB10",
-   "n_bars": 2420,
+   "n_bars": 2486,
    "status": "ok",
    "first": "2026-08-23 18:01",
-   "last": "2026-08-26 13:42",
+   "last": "2026-08-26 14:48",
    "n_sessions": 5,
-   "span_min": 4062,
-   "covered_min": 2420,
+   "span_min": 4128,
+   "covered_min": 2486,
    "hole_min": 65,
    "notrade_min": 23,
-   "stale_min": 0,
+   "stale_min": -7,
    "sessions": [
     {
      "n": 711,
@@ -292,24 +292,24 @@
      "to": "08-26 06:00"
     },
     {
-     "n": 52,
+     "n": 118,
      "from": "08-26 12:09",
-     "to": "08-26 13:42"
+     "to": "08-26 14:48"
     }
    ]
   },
   "KTB3": {
    "instr_id": "KTB3",
-   "n_bars": 2383,
+   "n_bars": 2447,
    "status": "ok",
    "first": "2026-08-23 18:01",
-   "last": "2026-08-26 13:42",
+   "last": "2026-08-26 14:48",
    "n_sessions": 5,
-   "span_min": 4062,
-   "covered_min": 2383,
+   "span_min": 4128,
+   "covered_min": 2447,
    "hole_min": 66,
-   "notrade_min": 59,
-   "stale_min": 0,
+   "notrade_min": 61,
+   "stale_min": -7,
    "sessions": [
     {
      "n": 711,
@@ -332,24 +332,24 @@
      "to": "08-26 06:00"
     },
     {
-     "n": 47,
+     "n": 111,
      "from": "08-26 12:09",
-     "to": "08-26 13:42"
+     "to": "08-26 14:48"
     }
    ]
   },
   "KTB30": {
    "instr_id": "KTB30",
-   "n_bars": 14,
+   "n_bars": 19,
    "status": "ok",
    "first": "2026-08-25 11:22",
-   "last": "2026-08-25 15:01",
-   "n_sessions": 2,
-   "span_min": 220,
-   "covered_min": 14,
-   "hole_min": 0,
-   "notrade_min": 146,
-   "stale_min": 1361,
+   "last": "2026-08-26 14:34",
+   "n_sessions": 3,
+   "span_min": 1633,
+   "covered_min": 19,
+   "hole_min": 10,
+   "notrade_min": 207,
+   "stale_min": 7,
    "sessions": [
     {
      "n": 6,
@@ -360,6 +360,11 @@
      "n": 8,
      "from": "08-25 13:43",
      "to": "08-25 15:01"
+    },
+    {
+     "n": 5,
+     "from": "08-26 13:19",
+     "to": "08-26 14:34"
     }
    ]
   },
@@ -374,7 +379,7 @@
    "covered_min": 364,
    "hole_min": 3,
    "notrade_min": 132,
-   "stale_min": 1030,
+   "stale_min": 1089,
    "sessions": [
     {
      "n": 9,
@@ -404,7 +409,7 @@
    "covered_min": 365,
    "hole_min": 5,
    "notrade_min": 134,
-   "stale_min": 89,
+   "stale_min": 148,
    "sessions": [
     {
      "n": 12,
@@ -439,7 +444,7 @@
    "covered_min": 399,
    "hole_min": 1,
    "notrade_min": 103,
-   "stale_min": 89,
+   "stale_min": 148,
    "sessions": [
     {
      "n": 12,
@@ -474,7 +479,7 @@
    "covered_min": 412,
    "hole_min": 3,
    "notrade_min": 86,
-   "stale_min": 89,
+   "stale_min": 148,
    "sessions": [
     {
      "n": 11,
@@ -509,7 +514,7 @@
    "covered_min": 369,
    "hole_min": 4,
    "notrade_min": 124,
-   "stale_min": 1031,
+   "stale_min": 1090,
    "sessions": [
     {
      "n": 7,
@@ -529,5 +534,5 @@
    ]
   }
  },
- "backfill_run": false
+ "backfill_run": true
 }

@@ -43,8 +43,20 @@ if dj.exists():
 
 
 # ── pair 계산 ────────────────────────────────────────────────────────────
+def _sqlite_connect_safe(*args, **kwargs):
+    """랩 공통 커넥션 — 락을 만나면 죽지 않고 기다린다(2026-08-26 사고 대응)."""
+    import sqlite3 as _s3
+    kwargs.setdefault("timeout", 60)
+    _c = _s3.connect(*args, **kwargs)
+    try:
+        _c.execute("PRAGMA busy_timeout=60000")
+    except Exception:
+        pass
+    return _c
+
+
 def load(a, b):
-    con = sqlite3.connect(DB, timeout=60)
+    con = _sqlite_connect_safe(DB, timeout=60)
     rows = list(con.execute(
         "SELECT x.bar_time, x.close, y.close FROM minbar x"
         " JOIN minbar y ON x.bar_time=y.bar_time"
@@ -643,8 +655,8 @@ function renderCollector(d){
   + "</td></tr>";
  setAll("ad-collector", h);
  setAll("ad-note", L(
-  "되받을 수 있는 과거는 <b>최근 900분(15시간)</b>입니다 — 국내선옵 t8461 에 날짜 파라미터가 없고 cnt 상한이 900 이기 때문(2026-08-26 실측). 해외선옵 o3103 은 cts 연속조회로 더 과거까지 가지만 <b>장중에만</b> 응답합니다.",
-  "Recoverable history is <b>the last 900 minutes (15h)</b> — the KR futures TR t8461 has no date parameter and caps cnt at 900 (measured 2026-08-26). The overseas TR o3103 pages further back via cts cursors but <b>only during its session</b>."));
+  "되받을 수 있는 과거는 <b>최근 900분(15시간)</b>입니다 — 국내선옵 t8461 에 날짜 파라미터가 없고 cnt 상한이 900 이기 때문(2026-08-26 실측). CME 는 <b>되받을 방법이 아예 없습니다</b> — 이 계정에서 REST(o3103·o3106·o3121)가 CME 자료를 주지 않아 실시간 WebSocket tick 만이 소스입니다. 수집기가 꺼져 있던 시간은 영구 결측이라, CME 는 <b>끊기지 않게 지키는 것</b>이 유일한 대책입니다.",
+  "Recoverable history is <b>the last 900 minutes (15h)</b> — the KR futures TR t8461 has no date parameter and caps cnt at 900 (measured 2026-08-26). For CME there is <b>no way to fetch the past at all</b> — on this account the REST TRs (o3103/o3106/o3121) return nothing for CME, so the live WebSocket tick feed is the only source. Any time the collector is down is lost for good, so for CME the only remedy is <b>keeping the feed alive</b>."));
 }
 function adminRefresh(){
  var g = function(p){ return api(p).then(function(d){ return d; }).catch(function(){ return null; }); };

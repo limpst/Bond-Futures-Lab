@@ -38,8 +38,20 @@ DB = ROOT / "data" / "minbars.db"
 GAP_MIN = 60          # 이보다 긴 공백은 세션 경계로 본다
 
 
+def _sqlite_connect_safe(*args, **kwargs):
+    """랩 공통 커넥션 — 락을 만나면 죽지 않고 기다린다(2026-08-26 사고 대응)."""
+    import sqlite3 as _s3
+    kwargs.setdefault("timeout", 60)
+    _c = _s3.connect(*args, **kwargs)
+    try:
+        _c.execute("PRAGMA busy_timeout=60000")
+    except Exception:
+        pass
+    return _c
+
+
 def load_pair(a: str, b: str):
-    con = sqlite3.connect(DB, timeout=60)
+    con = _sqlite_connect_safe(DB, timeout=60)
     con.row_factory = sqlite3.Row
     rows = list(con.execute(
         "SELECT x.bar_time AS t, x.close AS pa, y.close AS pb"

@@ -1,2 +1,3 @@
 {"date": "2026-08-24", "n_aligned": 1422, "adf_p": 0.1102, "half_life_min": 22.8, "ecm_gamma": -0.02992, "t_ols": -4.64, "t_hac10": -1.95, "spread_now": -1.94, "z_now": 1.03}
 {"date": "2026-08-25", "n_aligned": 1583, "adf_p": 0.5375, "half_life_min": 302.4, "ecm_gamma": -0.00229, "t_ols": -1.38, "t_hac10": -1.64, "spread_now": -2.28, "z_now": -0.49}
+{"date": "2026-08-26", "n_aligned": 2448, "adf_p": 0.8469, "half_life_min": 482.8, "ecm_gamma": -0.00143, "t_ols": -1.03, "t_hac10": -0.97, "spread_now": -2.62, "z_now": 0.77}

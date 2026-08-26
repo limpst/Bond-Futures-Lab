@@ -44,6 +44,18 @@ EXIT_BAND = 0.5
 ECM_T_CRIT = -1.64            # 5% 단측
 
 
+def _sqlite_connect_safe(*args, **kwargs):
+    """랩 공통 커넥션 — 락을 만나면 죽지 않고 기다린다(2026-08-26 사고 대응)."""
+    import sqlite3 as _s3
+    kwargs.setdefault("timeout", 60)
+    _c = _s3.connect(*args, **kwargs)
+    try:
+        _c.execute("PRAGMA busy_timeout=60000")
+    except Exception:
+        pass
+    return _c
+
+
 def load_series(con, instr: str) -> list[tuple[str, float]]:
     return [(t, c) for t, c in con.execute(
         "SELECT bar_time, close FROM minbar WHERE instr_id=? AND close>0 "
@@ -230,7 +242,7 @@ def main() -> int:
     if not DB.is_file():
         print("[sweep] data/minbars.db 없음 — 먼저 수집하십시오 (collect_minbars.py --live)")
         return 1
-    con = sqlite3.connect(DB, timeout=60)
+    con = _sqlite_connect_safe(DB, timeout=60)
     counts = dict(con.execute("SELECT instr_id, COUNT(*) FROM minbar GROUP BY instr_id"))
     print("[sweep] 보유 봉수:", counts or "0건")
     if not counts:

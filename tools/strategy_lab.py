@@ -69,8 +69,20 @@ LEG_LAG_SEC = 10.0   # 대략 하루 400봉(주간+야간 일부) 기준 연율�
 
 
 # ── 자료 ─────────────────────────────────────────────────────────────────
+def _sqlite_connect_safe(*args, **kwargs):
+    """랩 공통 커넥션 — 락을 만나면 죽지 않고 기다린다(2026-08-26 사고 대응)."""
+    import sqlite3 as _s3
+    kwargs.setdefault("timeout", 60)
+    _c = _s3.connect(*args, **kwargs)
+    try:
+        _c.execute("PRAGMA busy_timeout=60000")
+    except Exception:
+        pass
+    return _c
+
+
 def load(a, b):
-    con = sqlite3.connect(DB, timeout=60)
+    con = _sqlite_connect_safe(DB, timeout=60)
     rows = list(con.execute(
         "SELECT x.bar_time, x.open, x.close, y.open, y.close"
         " FROM minbar x JOIN minbar y ON x.bar_time=y.bar_time"

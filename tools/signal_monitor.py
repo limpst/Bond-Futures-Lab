@@ -38,6 +38,18 @@ DEFAULT_STRAT = {"selector": "qubo_sa", "weights": "invvol",
                  "threshold": 2.0, "iqr_fence": 1.5, "ecm_gate": True}
 
 
+def _sqlite_connect_safe(*args, **kwargs):
+    """랩 공통 커넥션 — 락을 만나면 죽지 않고 기다린다(2026-08-26 사고 대응)."""
+    import sqlite3 as _s3
+    kwargs.setdefault("timeout", 60)
+    _c = _s3.connect(*args, **kwargs)
+    try:
+        _c.execute("PRAGMA busy_timeout=60000")
+    except Exception:
+        pass
+    return _c
+
+
 def strat() -> dict:
     if STRAT_FILE.is_file():
         try:
@@ -91,7 +103,7 @@ def main() -> int:
     a = ap.parse_args()
     cfg = strat()
 
-    con = sqlite3.connect(DB, timeout=60)
+    con = _sqlite_connect_safe(DB, timeout=60)
     out = {"generated_utc": f"{dt.datetime.now(dt.timezone.utc):%Y-%m-%d %H:%M:%S}",
            "strategy": cfg, "window_bars": a.window, "pairs": []}
     bars_export: dict[str, list] = {}
