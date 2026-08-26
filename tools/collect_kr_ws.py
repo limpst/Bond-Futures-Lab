@@ -25,6 +25,15 @@
 """
 from __future__ import annotations
 
+import sys as _sys
+# 작업 스케줄러 콘솔은 cp949 라 '—' 같은 문자에서 UnicodeEncodeError 로 죽는다.
+# 출력 스트림을 UTF-8 로 강제하고, 못 쓰는 문자는 대체 표기로 흘린다.
+for _s in (_sys.stdout, _sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 import argparse
 import asyncio
 import json
@@ -63,7 +72,7 @@ CREATE TABLE IF NOT EXISTS quote(
 
 
 def open_db() -> sqlite3.Connection:
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(DB, timeout=60)
     c.row_factory = sqlite3.Row
     c.execute(QUOTE_SCHEMA)
     c.commit()
@@ -182,12 +191,18 @@ async def collect(minutes: int, dry: bool) -> int:
                     sym = str(b.get("futcode") or "").strip()
                     if sym not in tg:
                         continue
-                    if "bidho1" in b:                 # FH9 호가 스냅샷
+                    # ★ FC9 체결 payload 에도 bidho1/offerho1 이 들어 있다(실측).
+                    #   bidho1 로 가르면 체결이 전부 호가로 오분류되어 봉이 하나도
+                    #   안 만들어진다(2026-08-26 실측: 호가 619건 · 봉 0개).
+                    #   체결에만 있는 chetime/price 를 먼저 보고, 없으면 호가로 본다.
+                    if "price" in b and "chetime" in b:        # FC9 체결
+                        pass
+                    elif "bidho2" in b:                        # FH9 호가 5단
                         n_quote += save_quote(con, tg[sym], sym, b, dry)
                         if n_quote % 200 == 0:
                             con.commit()
                         continue
-                    if "price" not in b:              # FC9 체결만 아래로
+                    else:
                         continue
                     px = _f(b.get("price"))
                     t = str(b.get("chetime") or "").zfill(6)

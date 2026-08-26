@@ -230,7 +230,7 @@ def main() -> int:
     if not DB.is_file():
         print("[sweep] data/minbars.db 없음 — 먼저 수집하십시오 (collect_minbars.py --live)")
         return 1
-    con = sqlite3.connect(DB)
+    con = sqlite3.connect(DB, timeout=60)
     counts = dict(con.execute("SELECT instr_id, COUNT(*) FROM minbar GROUP BY instr_id"))
     print("[sweep] 보유 봉수:", counts or "0건")
     if not counts:

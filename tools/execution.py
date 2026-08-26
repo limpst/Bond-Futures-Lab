@@ -95,7 +95,7 @@ def rms_check(order: dict) -> tuple[bool, str]:
 
 def place_pair_order(pair: str, action: str, legs: list[dict], reason: str) -> str:
     """스프레드 양다리 주문 한 건. mode 에 따라 dry 기록 또는 live 게이트."""
-    con = sqlite3.connect(DB)
+    con = sqlite3.connect(DB, timeout=60)
     con.executescript(SCHEMA)
     mode = get_mode()
     row = {
@@ -159,7 +159,7 @@ def main() -> int:
           f"· MR≤{lim['max_margin_ratio']} · lev≤{lim['max_leverage']} "
           f"· pair당 {lim['max_contracts_per_pair']}계약")
     if DB.is_file():
-        con = sqlite3.connect(DB)
+        con = sqlite3.connect(DB, timeout=60)
         try:
             n = con.execute("SELECT COUNT(*) FROM oms_order").fetchone()[0]
             last = con.execute("SELECT ts_utc,mode,pair,action,status FROM oms_order "

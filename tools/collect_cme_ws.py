@@ -26,6 +26,15 @@ volume: OVC 의 totq 는 '세션 누적' 계약수다. 봉 거래량 = 구간 �
 """
 from __future__ import annotations
 
+import sys as _sys
+# 작업 스케줄러 콘솔은 cp949 라 '—' 같은 문자에서 UnicodeEncodeError 로 죽는다.
+# 출력 스트림을 UTF-8 로 강제하고, 못 쓰는 문자는 대체 표기로 흘린다.
+for _s in (_sys.stdout, _sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 import argparse
 import asyncio
 import json
@@ -49,7 +58,7 @@ def now_utc() -> str:
 
 
 def open_db() -> sqlite3.Connection:
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(DB, timeout=60)
     c.row_factory = sqlite3.Row
     return c
 

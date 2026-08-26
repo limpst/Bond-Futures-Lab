@@ -44,7 +44,7 @@ if dj.exists():
 
 # ── pair 계산 ────────────────────────────────────────────────────────────
 def load(a, b):
-    con = sqlite3.connect(DB)
+    con = sqlite3.connect(DB, timeout=60)
     rows = list(con.execute(
         "SELECT x.bar_time, x.close, y.close FROM minbar x"
         " JOIN minbar y ON x.bar_time=y.bar_time"
@@ -290,7 +290,9 @@ tabs = "".join(
     f'<button class="tab{" on" if i == 0 else ""}" data-go="{P["key"]}">'
     f'<b>{P["tab"]}</b><span>{P["title"]}</span></button>' for i, P in enumerate(PAIRS))
 
-HTML = """<title>Bond Futures Lab</title>
+HTML = """<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bond Futures Lab</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
 <style>
 :root{--bg:#0B0E14;--panel:#121722;--panel2:#171E2C;--line:#232B3A;--text:#E8ECF4;

@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
 
 def open_db() -> sqlite3.Connection:
     DB.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB)
+    con = sqlite3.connect(DB, timeout=60)
     con.executescript(SCHEMA)
     for ins in INSTRUMENTS:
         con.execute(
@@ -373,7 +373,7 @@ def do_health() -> int:
     if not DB.is_file():
         print("[health] DB 없음 — 수집 전")
         return 1
-    con = sqlite3.connect(DB)
+    con = sqlite3.connect(DB, timeout=60)
     today = f"{dt.date.today()}"
     print(f"[health] {_now()} UTC · DB {DB.name}")
     print("  종목별 봉수 (전체 / 오늘):")

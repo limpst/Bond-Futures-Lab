@@ -20,6 +20,15 @@
 """
 from __future__ import annotations
 
+import sys as _sys
+# 작업 스케줄러 콘솔은 cp949 라 '—' 같은 문자에서 UnicodeEncodeError 로 죽는다.
+# 출력 스트림을 UTF-8 로 강제하고, 못 쓰는 문자는 대체 표기로 흘린다.
+for _s in (_sys.stdout, _sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 import argparse
 import datetime as dt
 import sqlite3
@@ -56,7 +65,7 @@ def main() -> int:
     if not DB.is_file():
         print("DB 없음: %s" % DB)
         return 1
-    con = sqlite3.connect(DB)
+    con = sqlite3.connect(DB, timeout=60)
     con.row_factory = sqlite3.Row
     now = dt.datetime.now()
     rows = {r["instr_id"]: (r["market"], r["last"]) for r in con.execute(

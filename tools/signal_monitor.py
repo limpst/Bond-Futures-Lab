@@ -91,7 +91,7 @@ def main() -> int:
     a = ap.parse_args()
     cfg = strat()
 
-    con = sqlite3.connect(DB)
+    con = sqlite3.connect(DB, timeout=60)
     out = {"generated_utc": f"{dt.datetime.now(dt.timezone.utc):%Y-%m-%d %H:%M:%S}",
            "strategy": cfg, "window_bars": a.window, "pairs": []}
     bars_export: dict[str, list] = {}

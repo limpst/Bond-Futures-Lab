@@ -9,6 +9,9 @@ tools/logs/
 # 무한히 자라는 수집 데이터
 data/minbars.db
 data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.db-journal
 data/bars_recent.json
 data/signals.json
 data/multicum_*.csv
