@@ -52,7 +52,20 @@ COMMISSION_PT = 0.004       # 왕복 수수료 — 계약당 1,000원(편도) �
 #   1pt = 1,000,000원 이므로 계약당 편도 1,000원 = 0.001 pt.
 #   spread 는 다리 2개 → 진입 0.002 + 청산 0.002 = 왕복 0.004 pt.
 #   (사용자 확인 2026-08-25. 실제 요율이 다르면 이 상수만 고치면 된다)
-BARS_PER_YEAR = 252 * 400   # 대략 하루 400봉(주간+야간 일부) 기준 연율화
+BARS_PER_YEAR = 252 * 400   # 대략 하루 400봉 기준 연율화
+
+# ── leg risk ────────────────────────────────────────────────────────────
+# 스프레드는 다리 2개를 따로 주문한다. 거래소 스프레드 상품이 있으면 한 종목으로
+# 묶여 이 위험이 0 이지만, 2026-08-26 마스터 조회 결과:
+#   KRX  캘린더 스프레드만 상장 (MF SP 09-2610 등) — 상품간(KTB3-KTB10)은 없음
+#   KTB10-ZN 는 KRX x CME 라 구조적으로 단일 종목이 될 수 없다
+# 따라서 한쪽만 체결된 구간의 노출을 비용으로 계상해야 정직하다.
+#
+# 모델: 어려운 다리를 먼저 치고 LEG_LAG_SEC 뒤에 나머지가 체결된다고 본다.
+#   기대 손실 = 0 (방향은 대칭) 이지만 **분산**이 늘고, 그 분산의 대가로
+#   E[|노출|] = sigma_spread_per_sec * sqrt(LEG_LAG_SEC) * sqrt(2/pi) 만큼을
+#   왕복마다 뺀다 (half-normal 의 기대 절대값).
+LEG_LAG_SEC = 10.0   # 대략 하루 400봉(주간+야간 일부) 기준 연율화
 
 
 # ── 자료 ─────────────────────────────────────────────────────────────────
@@ -189,14 +202,15 @@ def sig_bh(sc, segs):
 
 
 # ── 체결·비용 ────────────────────────────────────────────────────────────
-def run(sig, T, so, sc, segs, half_spread, commission=COMMISSION_PT):
+def run(sig, T, so, sc, segs, half_spread, commission=COMMISSION_PT,
+        leg_sigma=0.0):
     """t 봉 종가 시그널 → t+1 봉 시가 체결. 세션 끝 강제 청산.
 
     비용: 포지션이 바뀔 때마다 |Δpos| × (유효 half-spread + 왕복 수수료/2).
     implementation shortfall = (체결가 − 결정가) × 방향 — 결정 시점과 체결 시점의
     가격 차이. 지연 체결 때문에 생기며, 비용과 별도로 따로 집계한다.
     """
-    pnl = 0.0; cost = 0.0; isf = 0.0
+    pnl = 0.0; cost = 0.0; isf = 0.0; legc = 0.0
     pos = 0; n_tr = 0; wins = 0; entry = None
     curve = []
     for s, e in segs:
@@ -208,28 +222,30 @@ def run(sig, T, so, sc, segs, half_spread, commission=COMMISSION_PT):
                 decision = sc[i]                    # t 종가에서 결정
                 d = abs(want - pos)
                 cost += d * (half_spread + commission / 2)
+                legc += d * leg_sigma          # 한쪽만 체결된 구간의 기대 노출
                 isf += (px - decision) * (want - pos)
                 if pos != 0 and entry is not None:
                     p = (px - entry) * pos
                     pnl += p; n_tr += 1; wins += p > 0
                 entry = px if want != 0 else None
                 pos = want
-            curve.append(pnl - cost)
+            curve.append(pnl - cost - legc)
         if pos != 0 and entry is not None:          # 세션 끝 강제 청산
             px = so[e - 1]
             cost += abs(pos) * (half_spread + commission / 2)
+            legc += abs(pos) * leg_sigma
             p = (px - entry) * pos
             pnl += p; n_tr += 1; wins += p > 0
             pos = 0
-        curve.append(pnl - cost)
-    net = pnl - cost
+        curve.append(pnl - cost - legc)
+    net = pnl - cost - legc
     rets = [curve[i] - curve[i - 1] for i in range(1, len(curve))]
     sd = (math.sqrt(sum(r * r for r in rets) / len(rets)) if rets else 0.0)
     sharpe = ((sum(rets) / len(rets)) / sd * math.sqrt(BARS_PER_YEAR)) if sd > 1e-12 else 0.0
     peak = -1e18; mdd = 0.0
     for v in curve:
         peak = max(peak, v); mdd = min(mdd, v - peak)
-    return dict(gross=pnl, cost=cost, isf=isf, net=net, n=n_tr, wins=wins,
+    return dict(gross=pnl, cost=cost, legrisk=legc, isf=isf, net=net, n=n_tr, wins=wins,
                 sharpe=sharpe, mdd=mdd, krw=net * PT_KRW)
 
 
@@ -262,18 +278,30 @@ def main():
         ("mom   추세추종 2.0σ", sig_mom(sc, segs, 120, 2.0)),
         ("ma    이평교차 20/120", sig_ma(sc, segs, 20, 120)),
     ]
+    # leg risk 크기 = spread 의 초당 변동성 x sqrt(지연) x sqrt(2/pi)
+    d = []
+    for s0, e0 in segs:
+        d += [sc[i] - sc[i - 1] for i in range(s0 + 1, e0)]
+    sig_min = (math.sqrt(sum(v * v for v in d) / len(d)) if d else 0.0)   # 분당 sd
+    sig_sec = sig_min / math.sqrt(60.0)
+    leg_sigma = sig_sec * math.sqrt(LEG_LAG_SEC) * math.sqrt(2.0 / math.pi)
+    print("  leg risk: spread 분당 sd %.5f pt -> %0.1f초 노출 기대 %.5f pt/회"
+          % (sig_min, LEG_LAG_SEC, leg_sigma))
+    print("            (거래소 스프레드 상품이 없어 다리 2개를 따로 쳐야 한다 —"
+          " 2026-08-26 마스터 조회 확인)")
+
     res = []
     for name, sig in STRATS:
-        r = run(sig, T, so, sc, segs, half_spread)
+        r = run(sig, T, so, sc, segs, half_spread, leg_sigma=leg_sigma)
         r["name"] = name
         res.append(r)
     res.sort(key=lambda r: -r["net"])
     print("\n  %-20s %9s %8s %8s %9s %5s %5s %8s %8s"
           % ("전략", "순손익pt", "비용", "IS", "원화", "거래", "승", "샤프", "MDD"))
     for r in res:
-        print("  %-20s %+9.4f %8.4f %+8.4f %+9.0f %5d %5d %8.2f %8.4f"
-              % (r["name"], r["net"], r["cost"], r["isf"], r["krw"],
-                 r["n"], r["wins"], r["sharpe"], r["mdd"]))
+        print("  %-20s %+9.4f %8.4f %8.4f %+8.4f %+9.0f %5d %5d %8.2f"
+              % (r["name"], r["net"], r["cost"], r["legrisk"], r["isf"], r["krw"],
+                 r["n"], r["wins"], r["sharpe"]))
     best = res[0]
     print("\n  1위: %s · 순손익 %+.4f pt (= %s원) · 거래 %d건"
           % (best["name"].split()[0], best["net"],

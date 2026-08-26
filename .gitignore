@@ -20,3 +20,6 @@ data/sweep_results.csv
 __pycache__/
 *.pyc
 data/zseries.json
+
+# 랩 시계열 DB 는 영구 보존한다 (WAL/SHM 은 런타임 파일이라 제외)
+!data/minbars.db

@@ -285,10 +285,47 @@ kus_extra = """
    위 4개가 채워지면 KTB 탭과 같은 판정 일지·시뮬레이션이 여기에도 붙습니다.</div>
  </section>"""
 
-panes = pane(PAIRS[0], ktb_extra) + pane(PAIRS[1], kus_extra)
+
+ADMIN_PANE = """
+<div class="pane" id="pane-admin" data-pair="admin">
+ <p class="oneline">수집이 살아 있는지, 빠진 데이터가 있는지 보고 <b>여기서 바로 메우는</b> 화면이에요.
+  PC 가 꺼졌거나 인터넷이 끊겼던 구간은 <b>최근 15시간까지</b> 자동으로 되받을 수 있어요.</p>
+ <div class="badges" id="ad-badges"></div>
+
+ <section>
+  <h2><span class="n">A</span>지금 살아 있나 — 라이브</h2>
+  <p class="lead" id="ad-live-lead">랩 API(127.0.0.1:8010)에 연결되면 30초마다 스스로 갱신돼요.</p>
+  <div class="grid g4" id="ad-live"></div>
+ </section>
+
+ <section>
+  <h2><span class="n">B</span>데이터 건강 — 무엇이 빠졌나</h2>
+  <p class="lead"><b>무거래</b>는 그 분에 아무도 사고팔지 않아 봉이 없는 것(정상)이고,
+   <b>결측</b>은 수집기가 멈춰서 못 받은 것(사고)이에요. 이 둘을 수집기 가동 기록과 대조해 가릅니다.</p>
+  <div class="card tblwrap"><table id="ad-health"><tr><td class="tx sub">불러오는 중…</td></tr></table></div>
+  <div id="ad-perm"></div>
+ </section>
+
+ <section>
+  <h2><span class="n">C</span>관리 작업</h2>
+  <p class="lead">버튼은 랩 API 가 연결됐을 때만 눌러집니다 — 배포본(인터넷)에서는 보기만 됩니다.</p>
+  <div class="controls" id="ad-actions"></div>
+  <div class="card tblwrap" style="margin-top:12px"><table id="ad-jobs"><tr><td class="tx sub">작업 기록 없음</td></tr></table></div>
+ </section>
+
+ <section>
+  <h2><span class="n">D</span>수집기 상태</h2>
+  <div class="card tblwrap"><table id="ad-collector"><tr><td class="tx sub">—</td></tr></table></div>
+  <div class="warnbox" id="ad-note"></div>
+ </section>
+</div>"""
+
+panes = pane(PAIRS[0], ktb_extra) + pane(PAIRS[1], kus_extra) + ADMIN_PANE
 tabs = "".join(
     f'<button class="tab{" on" if i == 0 else ""}" data-go="{P["key"]}">'
     f'<b>{P["tab"]}</b><span>{P["title"]}</span></button>' for i, P in enumerate(PAIRS))
+tabs += ('<button class="tab" data-go="admin"><b>⚙️ 운영·관리자</b>'
+         '<span>데이터 건강 · backfill · 라이브</span></button>')
 
 HTML = """<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -353,6 +390,10 @@ details[open] summary::before{content:"▾ "}
  border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:10px 0;overflow-x:auto}
 .chartbox{position:relative}
 canvas{width:100%;display:block}
+.btn-ad{background:var(--panel2);border:1px solid var(--line);color:var(--text);font:inherit;font-size:13px;padding:8px 14px;border-radius:9px;cursor:pointer;transition:border-color .15s,background .15s}
+.btn-ad:hover:not(:disabled){border-color:var(--amber);background:#1d2534}
+.btn-ad:disabled{opacity:.4;cursor:not-allowed}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .warnbox{border-left:3px solid var(--amber);background:var(--panel2);border-radius:10px;
  padding:12px 16px;font-size:13px;color:var(--muted);margin-top:14px}
 a{color:var(--teal)}
@@ -505,6 +546,149 @@ function go(key){
 document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>go(t.dataset.go)));
 go(PAIRS[location.hash.slice(1)] ? location.hash.slice(1) : "ktb");
 addEventListener("resize", render);
+
+// ── ⚙️ 운영·관리자: 라이브 폴링 + 데이터 건강 + 관리 작업 ───────────────
+const LAB_API = (location.port === "8010" || location.hostname === "127.0.0.1"
+                 || location.hostname === "localhost") ? "" : "http://127.0.0.1:8010";
+let ADMIN_OK = false;
+// KR/EN 컨테이너를 각각 그 언어로 그린다 — 한 번 그리고 언어를 바꾸면 반대 언어가
+// 남는 문제를 없애기 위해, 렌더 패스를 컨테이너마다 한 번씩 돌린다.
+let _EN = false, SCOPE = "#Lkr";
+function L(kr,en){ return _EN?en:kr; }
+function q(sel){ return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+function setAll(id, html){ q(SCOPE+" #"+id).forEach(function(el){ el.innerHTML = html; }); }
+function api(path, opt){
+ return fetch(LAB_API + path, Object.assign({cache:"no-store"}, opt||{}))
+  .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); });
+}
+function pill(cls, txt){ return "<span class='pill "+cls+"'><i></i>"+txt+"</span>"; }
+function fresh(min){
+ if(min===null||min===undefined) return ["p-crit", L("데이터 없음","no data")];
+ if(min<=3) return ["p-ok", L("실시간 ("+min+"분 전)","live ("+min+" min ago)")];
+ if(min<=20) return ["p-warn", L("지연 "+min+"분","stale "+min+" min")];
+ return ["p-crit", L("멈춤 "+min+"분","down "+min+" min")];
+}
+function renderLive(d){
+ var f = fresh(d && d.stale_min);
+ setAll("ad-badges",
+   pill(ADMIN_OK?"p-ok":"p-warn", ADMIN_OK ? L("랩 API 연결됨 — 라이브","lab API connected — live")
+                                           : L("스냅샷 모드 (랩 API 없음)","snapshot mode (no lab API)"))
+   + pill(f[0], f[1])
+   + pill("", L("갱신 ","updated ") + (d && d.asof ? d.asof.slice(11) : "—")));
+ if(!d){ setAll("ad-live","<div class='card kpi'><div class='lbl'>"
+    +L("라이브 없음","no live feed")+"</div><div class='val'>—</div><div class='note'>"
+    +L("랩 API 를 켜면 표시됩니다","start the lab API to see this")+"</div></div>"); return; }
+ var h="";
+ d.pairs.forEach(function(P){
+  var gz=P.gate_z?"🟢":"⚪", gi=P.gate_iqr?"🟢":"⚪", ge=P.gate_ecm?"🟢":"⚪";
+  var act = P.action && P.action!=="NONE";
+  h += "<div class='card kpi'><div class='lbl'>"+P.legs+"</div>"
+     + "<div class='val'>"+(P.z_now===null||P.z_now===undefined?"—":P.z_now.toFixed(2))+"</div>"
+     + "<div class='note'>z-score · spread "+(P.spread_now!==undefined?P.spread_now:"—")+" "+P.unit+"</div>"
+     + "<div class='note' style='margin-top:6px'>"+L("자물쇠","locks")+" z"+gz+" IQR"+gi+" ECM"+ge
+     + " · t_HAC "+(P.t_hac===null||P.t_hac===undefined?"—":P.t_hac)+"</div>"
+     + "<div class='note' style='margin-top:4px;color:"+(act?"var(--ok)":"var(--faint)")+"'>"
+     + (act ? L("신호: ","signal: ")+P.action : L("대기 — 진입 조건 아님","waiting — no entry"))+"</div></div>";
+ });
+ setAll("ad-live", h);
+}
+function renderHealth(d){
+ if(!d || d.error){ setAll("ad-health","<tr><td class='tx sub'>"
+   +L("건강 리포트 없음 — [점검 다시] 를 누르세요","no health report — press [Re-check]")+"</td></tr>"); return; }
+ var h = "<tr><th class='tx'>"+L("종목","instrument")+"</th><th>"+L("봉","bars")+"</th>"
+   + "<th>"+L("세션","sessions")+"</th><th>"+L("결측(분)","missing(min)")+"</th>"
+   + "<th>"+L("무거래(분)","no-trade(min)")+"</th><th class='tx'>"+L("마지막 봉","last bar")+"</th></tr>";
+ Object.keys(d.instruments||{}).forEach(function(k){
+  var s=d.instruments[k]; if(s.status!=="ok"){ h+="<tr><td class='tx'>"+k+"</td><td colspan='5' class='tx sub'>"
+    +L("데이터 없음","no data")+"</td></tr>"; return; }
+  var st=fresh(s.stale_min);
+  h += "<tr><td class='tx mono'>"+k+"</td><td>"+s.n_bars.toLocaleString()+"</td><td>"+s.n_sessions+"</td>"
+     + "<td style='color:"+(s.hole_min>0?"var(--crit)":"var(--faint)")+"'>"+s.hole_min+"</td>"
+     + "<td class='sub'>"+(s.notrade_min||0)+"</td>"
+     + "<td class='tx mono'>"+s.last+" <span class='"+st[0]+"' style='font-size:11px'>"+st[1]+"</span></td></tr>";
+ });
+ setAll("ad-health", h);
+ var perm = (d.permanent_gaps||[]);
+ var pv = "<div class='warnbox'>"+L("영구 결측 ","permanent gaps ")+perm.length
+   +L("건 — API 사거리(15시간)를 넘겨 되받을 수 없는 구간입니다. 지우지 않고 그대로 기록해 둡니다.",
+      " — beyond the 15-hour API reach, unrecoverable. Kept on record rather than hidden.");
+ if(perm.length) pv += "<div style='margin-top:8px;font-size:12px' class='mono'>"
+   + perm.slice(0,6).map(function(g){ return g.instr_id+" "+g.gap_from+" ~ "+g.gap_to+" ("+g.minutes+"m)"; }).join("<br>")
+   + (perm.length>6 ? "<br>… +"+(perm.length-6) : "") + "</div>";
+ pv += "</div>";
+ setAll("ad-perm", pv);
+}
+function renderJobs(d){
+ var js=(d&&d.jobs)||[];
+ if(!js.length){ setAll("ad-jobs","<tr><td class='tx sub'>"+L("작업 기록 없음","no jobs yet")+"</td></tr>"); return; }
+ var h="<tr><th class='tx'>"+L("작업","job")+"</th><th class='tx'>"+L("시작","start")+"</th>"
+   +"<th class='tx'>"+L("상태","status")+"</th><th class='tx'>"+L("결과","output")+"</th></tr>";
+ js.forEach(function(j){
+  var c = j.status==="done" ? "var(--ok)" : (j.status==="failed" ? "var(--crit)" : "var(--amber)");
+  h += "<tr><td class='tx mono'>"+j.name+"</td><td class='tx mono'>"+j.started+"</td>"
+     + "<td class='tx' style='color:"+c+"'>"+j.status+"</td>"
+     + "<td class='tx sub' style='max-width:520px;white-space:normal'>"
+     + (j.tail||"").replace(/[<>]/g,"").slice(-260)+"</td></tr>";
+ });
+ setAll("ad-jobs", h);
+}
+function renderCollector(d){
+ if(!d || d.error){ setAll("ad-collector","<tr><td class='tx sub'>—</td></tr>"); return; }
+ var h = "<tr><th class='tx'>"+L("항목","item")+"</th><th class='tx'>"+L("값","value")+"</th></tr>"
+  + "<tr><td class='tx'>"+L("마지막 수집 실행","last collector run")+"</td><td class='tx mono'>"
+  + (d.last_run_utc||"—")+" UTC ("+(d.last_run_age_min===null?"—":d.last_run_age_min+L("분 전"," min ago"))+")</td></tr>"
+  + "<tr><td class='tx'>"+L("DB 크기","DB size")+"</td><td class='tx mono'>"+d.db_mb+" MB</td></tr>"
+  + "<tr><td class='tx'>"+L("종목별 봉 수","bars by instrument")+"</td><td class='tx mono'>"
+  + Object.keys(d.bars_by_instrument||{}).map(function(k){ return k+" "+d.bars_by_instrument[k]; }).join(" · ")
+  + "</td></tr>";
+ setAll("ad-collector", h);
+ setAll("ad-note", L(
+  "되받을 수 있는 과거는 <b>최근 900분(15시간)</b>입니다 — 국내선옵 t8461 에 날짜 파라미터가 없고 cnt 상한이 900 이기 때문(2026-08-26 실측). 해외선옵 o3103 은 cts 연속조회로 더 과거까지 가지만 <b>장중에만</b> 응답합니다.",
+  "Recoverable history is <b>the last 900 minutes (15h)</b> — the KR futures TR t8461 has no date parameter and caps cnt at 900 (measured 2026-08-26). The overseas TR o3103 pages further back via cts cursors but <b>only during its session</b>."));
+}
+function adminRefresh(){
+ var g = function(p){ return api(p).then(function(d){ return d; }).catch(function(){ return null; }); };
+ Promise.all([g("/api/live"), g("/api/health"), g("/api/collector"), g("/api/jobs")])
+  .then(function(r){
+   ADMIN_OK = !!r[0];
+   [[false,"#Lkr"],[true,"#Len"]].forEach(function(sc){
+    _EN = sc[0]; SCOPE = sc[1];
+    renderLive(r[0]); renderHealth(r[1]); renderCollector(r[2]); renderJobs(r[3]); renderActions();
+   });
+  });
+}
+function renderActions(){
+ // inline onclick 을 쓰지 않는다 — 빌더의 삼중따옴표 템플릿에서 \" 이스케이프가
+ // 사라져 JS 가 깨진 적이 있다(2026-08-26). 리스너로 붙이면 그 위험이 없다.
+ var defs = [["점검 다시", "Re-check", "/api/health/refresh"],
+             ["backfill 실행", "Run backfill", "/api/backfill"],
+             ["대시보드 재생성", "Rebuild page", "/api/rebuild"]];
+ q(SCOPE+" #ad-actions").forEach(function(box){
+  box.innerHTML = "";
+  defs.forEach(function(d){
+   var btn = document.createElement("button");
+   btn.className = "btn-ad";
+   btn.textContent = L(d[0], d[1]);
+   btn.disabled = !ADMIN_OK;
+   btn.addEventListener("click", function(){ adminJob(d[2]); });
+   box.appendChild(btn);
+  });
+  var note = document.createElement("span");
+  note.className = "sub";
+  note.style.marginLeft = "8px";
+  note.textContent = ADMIN_OK ? L("연결됨 — 조작 가능", "connected — actions enabled")
+                              : L("랩 API 미연결 — 보기 전용", "lab API offline — read only");
+  box.appendChild(note);
+ });
+}
+function adminJob(path){
+ api(path, {method:"POST"}).then(function(){
+  setTimeout(adminRefresh, 800); setTimeout(adminRefresh, 4000); setTimeout(adminRefresh, 12000);
+ }).catch(function(e){ alert("실패: "+e.message); });
+}
+adminRefresh();
+setInterval(function(){ if(document.querySelector(".pane.on[data-pair='admin']")) adminRefresh(); }, 30000);
+
 </script>
 """
 
@@ -552,6 +736,7 @@ function setL(l){
  document.getElementById("lb-en").classList.toggle("on", l==="en");
  try{ localStorage.setItem("deltaone_lang", l); }catch(e){}
  if(typeof go==="function"){ var k=location.hash.slice(1)||"ktb"; go(k); }
+ if(typeof adminRefresh==="function") adminRefresh();
 }
 (function(){ var l="kr"; try{ l=localStorage.getItem("deltaone_lang")||"kr"; }catch(e){}
  setL(l); })();
