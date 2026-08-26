@@ -13,12 +13,14 @@
   이 문턱은 임의가 아니라 **β 의 rolling 표준편차가 진정되는지**를 같이 보고
   판단하라고 함께 출력한다.
 
-■ FX 는 아직 못 켠다 (2026-08-26 실측)
-  KRW 투자자에게 ZN 다리의 손익은 USDKRW 에 노출된다. 그런데 이 계정의
-  선물옵션 마스터(t8435)에는 통화선물이 없다 — gubun MF(지수 11종)·SF(코스닥 13종)
-  외에는 빈 응답(CF·FF·MC·CM·CR·FX·KF·DF 전부 0종). 즉 **FX 다리의 데이터
-  소스가 아직 없다.** 신호(금리 상대가치)는 FX 없이도 성립하지만, **손익 계산은
-  FX 없이는 틀린다** — 그래서 화면에 '미반영' 으로 남겨 둔다.
+■ FX (2026-08-26 갱신 — 소스 확보)
+  KRW 투자자에게 ZN 다리의 손익은 USDKRW 에 노출된다. LS 로는 받을 수 없다:
+  t8435(국내) gubun 10종에 통화선물 없음 · o3121(해외) 취급 12상품 중 FX 는
+  CNH 뿐 · WebSocket 으로 6KU26·6KZ26·6EU26 직접 구독도 전부 무응답.
+  그래서 **외부 소스**로 받는다 — tools/collect_fx.py (yfinance KRW=X 1분봉,
+  실패 시 Alpha Vantage 스냅샷). 데이터는 instr_id='USDKRW' 로 따로 저장하고
+  행마다 출처를 남긴다.
+  ★ 남은 것은 '소스' 가 아니라 '적용' 이다 — 손익 환산식에 아직 넣지 않았다.
 
   python tools/beta_fx.py            준비도 계산 → reports/pair_readiness.json
   python tools/beta_fx.py --min 500  문턱 조정해서 보기
@@ -43,6 +45,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "data" / "minbars.db"
 BETA_MIN = 1000          # 겹치는 봉이 이만큼 쌓여야 β 를 실제로 적용한다
 BETA_WIN = 240           # rolling β 창 (분)
+BETA_SD_MAX = 0.10       # 최근 rolling β 의 표준편차 상한 — 이보다 흔들리면 쓰지 않는다
 GAP_MIN = 60             # 세션 경계
 
 
@@ -128,7 +131,12 @@ def main():
         m = sum(w) / len(w)
         beta_sd_recent = math.sqrt(sum((v - m) ** 2 for v in w) / len(w))
 
-    ready = n >= a.min
+    # 문턱은 두 개다 — 표본 수 **그리고** 추정치의 안정성.
+    # 표본만 보고 켜면 β 가 0.9~1.9 를 오가는 상태에서 그중 한 값을 집어
+    # 쓰게 된다(2026-08-26 실측 sd 0.955). 그건 헤지가 아니라 도박이다.
+    enough = n >= a.min
+    stable = (beta_sd_recent is not None and beta_sd_recent <= BETA_SD_MAX)
+    ready = bool(enough and stable)
     rate = None
     if len(T) >= 2:
         span_min = (T[-1] - T[0]).total_seconds() / 60
@@ -136,35 +144,70 @@ def main():
         active = sum((T[b - 1] - T[a0]).total_seconds() / 60 for a0, b in segs) or 1
         rate = round(n / active, 2)          # 활성 1분당 겹침 봉
     eta_min = None
-    if rate and rate > 0 and not ready:
+    if rate and rate > 0 and not enough:          # 표본이 이미 찼으면 ETA 는 뜻이 없다
         eta_min = int((a.min - n) / rate)
+
+    # FX 실측 — 소스가 실제로 DB 에 있나, pair 와 얼마나 겹치나
+    _c = _con()
+    try:
+        fx_n, fx_lo, fx_hi = _c.execute(
+            "SELECT COUNT(*), MIN(bar_time), MAX(bar_time) FROM minbar WHERE instr_id='USDKRW'"
+        ).fetchone()
+        fx_ov = _c.execute(
+            "SELECT COUNT(*) FROM minbar x JOIN minbar y ON x.bar_time=y.bar_time"
+            " JOIN minbar z ON z.bar_time=x.bar_time"
+            " WHERE x.instr_id='KTB10' AND y.instr_id='ZN' AND z.instr_id='USDKRW'"
+        ).fetchone()[0]
+        fx_src = [r[0] for r in _c.execute(
+            "SELECT DISTINCT symbol FROM minbar WHERE instr_id='USDKRW' LIMIT 3")]
+    finally:
+        _c.close()
+    fx_status = {
+        "have_data": bool(fx_n),
+        "applied": False,
+        "bars": fx_n, "span": [fx_lo, fx_hi], "sources": fx_src,
+        "triple_overlap": fx_ov,
+        "data_detail": (f"{fx_n:,}봉 ({fx_lo} ~ {fx_hi}) · pair 와 3중 겹침 {fx_ov:,}분 · "
+                        f"출처 {', '.join(fx_src)}" if fx_n else
+                        "USDKRW 봉 없음 — tools/collect_fx.py 실행 필요"),
+        "reason": ("데이터는 있으나 손익 환산식에 아직 적용하지 않음 — "
+                   "신호(금리 상대가치)는 FX 없이도 성립하지만 손익은 FX 없이 틀린다"
+                   if fx_n else "소스 미확보"),
+    }
 
     rep = {
         "asof": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "pair": "KTB10-ZN",
         "overlap_bars": n, "threshold": a.min, "ready": ready,
+        "enough_bars": enough, "beta_stable": stable, "beta_sd_max": BETA_SD_MAX,
         "sessions": len(segs),
         "span": [T[0].strftime("%Y-%m-%d %H:%M"), T[-1].strftime("%Y-%m-%d %H:%M")] if T else None,
         "bars_per_active_min": rate,
         "eta_min_to_threshold": eta_min,
         "beta_applied": (round(beta_last, 4) if (ready and beta_last) else 1.0),
-        "beta_mode": "rolling OLS" if ready else "고정 1.0 (표본 부족)",
+        "beta_mode": ("rolling OLS" if ready else
+                      ("고정 1.0 (β 불안정 — sd %.3f > %.2f)" % (beta_sd_recent, BETA_SD_MAX)
+                       if (enough and beta_sd_recent) else "고정 1.0 (표본 부족)")),
         "beta_full_sample": (round(beta_full, 4) if beta_full else None),
         "beta_rolling_last": (round(beta_last, 4) if beta_last else None),
         "beta_rolling_sd": (round(beta_sd, 4) if beta_sd else None),
         "beta_rolling_sd_recent60": (round(beta_sd_recent, 4) if beta_sd_recent else None),
         "beta_window_min": BETA_WIN,
-        "fx": {"applied": False,
-               "reason": "이 계정 선물옵션 마스터(t8435)에 통화선물 없음 — "
-                         "FX 다리 데이터 소스 미확보 (2026-08-26 프로브)"},
+        "fx": fx_status,
         "checklist": [
-            {"item": "겹치는 봉 ≥ %d" % a.min, "ok": ready,
+            {"item": "겹치는 봉 ≥ %d" % a.min, "ok": enough,
              "detail": f"{n} / {a.min}" + (f" · 예상 {eta_min}분 남음" if eta_min else "")},
-            {"item": "rolling β 추정", "ok": bool(ready and beta_last),
-             "detail": ("β=%.3f (창 %d분, 표준편차 %.3f)" % (beta_last, BETA_WIN, beta_sd)
-                        if (ready and beta_last and beta_sd) else "문턱 미달 — β=1 사용 중")},
-            {"item": "FX(USDKRW) 조정", "ok": False,
-             "detail": "소스 미확보 — 신호는 성립하나 손익 계산은 미완"},
+            {"item": "rolling β 안정성 (최근60 sd ≤ %.2f)" % BETA_SD_MAX, "ok": stable,
+             "detail": (("sd %.3f — %s" % (beta_sd_recent,
+                         "안정, β 적용" if stable else "아직 노이즈, β=1 유지"))
+                        if beta_sd_recent is not None else "창이 덜 참")},
+            {"item": "rolling β 값", "ok": bool(ready and beta_last),
+             "detail": ("β=%.3f (창 %d분)" % (beta_last, BETA_WIN) if beta_last
+                        else "산출 불가") + (" · 전체표본 β=%.3f" % beta_full if beta_full else "")},
+            {"item": "FX(USDKRW) 데이터", "ok": fx_status["have_data"],
+             "detail": fx_status["data_detail"]},
+            {"item": "FX 손익 환산 적용", "ok": fx_status["applied"],
+             "detail": fx_status["reason"]},
             {"item": "duration(DV01) 매칭", "ok": False,
              "detail": "β 가 대리하지만 정식 DV01 매칭은 미구현"},
         ],

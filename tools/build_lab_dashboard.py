@@ -643,7 +643,7 @@ function renderReadiness(d){
    +"</div>"); return; }
  var pct = Math.max(0, Math.min(100, 100*d.overlap_bars/d.threshold));
  var eta = d.eta_min_to_threshold;
- var etatxt = d.ready ? L("문턱 도달","threshold reached")
+ var etatxt = (d.enough_bars||d.ready) ? L("표본 문턱 도달","bar threshold reached")
    : (eta ? L("현재 속도로 약 ","at the current rate ~")+Math.round(eta/60*10)/10+L("시간 남음"," h to go")
           : L("속도 산출 불가","rate unknown"));
  var h = "<div class='lbl' style='font-size:12px;color:var(--muted)'>"+d.pair
@@ -653,7 +653,7 @@ function renderReadiness(d){
    + "<span class='sub'>/ "+d.threshold.toLocaleString()+" · "+etatxt+"</span></div>"
    + "<div style='height:8px;border-radius:99px;background:var(--panel2);overflow:hidden'>"
    + "<div style='height:100%;width:"+pct.toFixed(1)+"%;background:"
-   + (d.ready?"var(--ok)":"var(--amber)")+"'></div></div>"
+   + (d.ready?"var(--ok)":"var(--amber)")+"'></div></div>"+ (d.enough_bars&&!d.ready ? "<div class='sub' style='margin-top:6px'>"+L("표본은 찼지만 β 가 아직 흔들려 적용 보류 중 — 아래 안정성 줄 참조","bars suffice but beta is still unstable, so it stays on hold — see the stability row")+"</div>" : "")
    + "<div class='sub' style='margin-top:10px'>β "+L("적용값","applied")+" <b class='mono'>"+d.beta_applied
    + "</b> ("+d.beta_mode+") · "+L("전체표본","full sample")+" "+d.beta_full_sample
    + " · rolling sd "+(d.beta_rolling_sd===null?"—":d.beta_rolling_sd)+"</div>";
@@ -690,8 +690,8 @@ function renderCollector(d){
   + "</td></tr>";
  setAll("ad-collector", h);
  setAll("ad-note", L(
-  "되받을 수 있는 과거는 <b>최근 900분(15시간)</b>입니다 — 국내선옵 t8461 에 날짜 파라미터가 없고 cnt 상한이 900 이기 때문(2026-08-26 실측). CME 는 <b>되받을 방법이 아예 없습니다</b> — 이 계정에서 REST(o3103·o3106·o3121)가 CME 자료를 주지 않아 실시간 WebSocket tick 만이 소스입니다. 수집기가 꺼져 있던 시간은 영구 결측이라, CME 는 <b>끊기지 않게 지키는 것</b>이 유일한 대책입니다.",
-  "Recoverable history is <b>the last 900 minutes (15h)</b> — the KR futures TR t8461 has no date parameter and caps cnt at 900 (measured 2026-08-26). For CME there is <b>no way to fetch the past at all</b> — on this account the REST TRs (o3103/o3106/o3121) return nothing for CME, so the live WebSocket tick feed is the only source. Any time the collector is down is lost for good, so for CME the only remedy is <b>keeping the feed alive</b>."));
+  "되받을 수 있는 과거는 <b>최근 900분(15시간)</b>입니다 — 국내선옵 t8461 에 날짜 파라미터가 없고 cnt 상한이 900 이기 때문(2026-08-26 실측). CME 는 LS 로는 되받을 수 없지만(REST 가 CME 자료를 안 줍니다) <b>yfinance 로 최근 7일까지 복구됩니다</b> — LS 봉과 겹치는 구간에서 가격차 중앙값 0.000000·최대 반 틱으로 사실상 같은 값임을 확인했습니다(2026-08-26). 빠진 분만 채우고 행마다 출처를 남깁니다. FX(USDKRW)도 같은 방식으로 받습니다.",
+  "Recoverable history is <b>the last 900 minutes (15h)</b> — the KR futures TR t8461 has no date parameter and caps cnt at 900 (measured 2026-08-26). LS cannot serve CME history (its REST TRs return nothing for CME), but <b>yfinance recovers up to 7 days</b> — on the overlapping minutes the two sources differ by a median of 0.000000 and at most half a tick (measured 2026-08-26). Only missing minutes are filled, and each row keeps its source. FX (USDKRW) comes the same way."));
 }
 function adminRefresh(){
  var g = function(p){ return api(p).then(function(d){ return d; }).catch(function(){ return null; }); };

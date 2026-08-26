@@ -1,42 +1,66 @@
 {
- "asof": "2026-08-26 19:27:53",
+ "asof": "2026-08-26 20:01:08",
  "pair": "KTB10-ZN",
- "overlap_bars": 275,
+ "overlap_bars": 1771,
  "threshold": 1000,
  "ready": false,
- "sessions": 6,
+ "enough_bars": true,
+ "beta_stable": false,
+ "beta_sd_max": 0.1,
+ "sessions": 5,
  "span": [
-  "2026-08-24 18:39",
-  "2026-08-26 19:25"
+  "2026-08-24 18:01",
+  "2026-08-26 20:00"
  ],
- "bars_per_active_min": 0.77,
- "eta_min_to_threshold": 941,
+ "bars_per_active_min": 0.9,
+ "eta_min_to_threshold": null,
  "beta_applied": 1.0,
- "beta_mode": "고정 1.0 (표본 부족)",
- "beta_full_sample": 0.9959,
- "beta_rolling_last": null,
- "beta_rolling_sd": 0.3775,
- "beta_rolling_sd_recent60": null,
+ "beta_mode": "고정 1.0 (β 불안정 — sd 0.794 > 0.10)",
+ "beta_full_sample": 1.0321,
+ "beta_rolling_last": 1.853,
+ "beta_rolling_sd": 0.9562,
+ "beta_rolling_sd_recent60": 0.7937,
  "beta_window_min": 240,
  "fx": {
+  "have_data": true,
   "applied": false,
-  "reason": "이 계정 선물옵션 마스터(t8435)에 통화선물 없음 — FX 다리 데이터 소스 미확보 (2026-08-26 프로브)"
+  "bars": 8976,
+  "span": [
+   "2026-08-18 08:00",
+   "2026-08-26 19:54"
+  ],
+  "sources": [
+   "yfinance:KRW=X"
+  ],
+  "triple_overlap": 1743,
+  "data_detail": "8,976봉 (2026-08-18 08:00 ~ 2026-08-26 19:54) · pair 와 3중 겹침 1,743분 · 출처 yfinance:KRW=X",
+  "reason": "데이터는 있으나 손익 환산식에 아직 적용하지 않음 — 신호(금리 상대가치)는 FX 없이도 성립하지만 손익은 FX 없이 틀린다"
  },
  "checklist": [
   {
    "item": "겹치는 봉 ≥ 1000",
-   "ok": false,
-   "detail": "275 / 1000 · 예상 941분 남음"
+   "ok": true,
+   "detail": "1771 / 1000"
   },
   {
-   "item": "rolling β 추정",
+   "item": "rolling β 안정성 (최근60 sd ≤ 0.10)",
    "ok": false,
-   "detail": "문턱 미달 — β=1 사용 중"
+   "detail": "sd 0.794 — 아직 노이즈, β=1 유지"
   },
   {
-   "item": "FX(USDKRW) 조정",
+   "item": "rolling β 값",
    "ok": false,
-   "detail": "소스 미확보 — 신호는 성립하나 손익 계산은 미완"
+   "detail": "β=1.853 (창 240분) · 전체표본 β=1.032"
+  },
+  {
+   "item": "FX(USDKRW) 데이터",
+   "ok": true,
+   "detail": "8,976봉 (2026-08-18 08:00 ~ 2026-08-26 19:54) · pair 와 3중 겹침 1,743분 · 출처 yfinance:KRW=X"
+  },
+  {
+   "item": "FX 손익 환산 적용",
+   "ok": false,
+   "detail": "데이터는 있으나 손익 환산식에 아직 적용하지 않음 — 신호(금리 상대가치)는 FX 없이도 성립하지만 손익은 FX 없이 틀린다"
   },
   {
    "item": "duration(DV01) 매칭",

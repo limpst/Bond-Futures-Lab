@@ -10,7 +10,11 @@ rem after-close once daily: econ metrics (ADF p / half-life / HAC t) log - needs
 
 "C:\Users\leeli\anaconda3\python.exe" tools\econometrics_report.py --daily >> tools\logs\collect.log 2>&1
 
-"C:\Users\leeli\AppData\Local\Programs\Python\Python312\python.exe" tools\data_health.py --os-pages 4 >> tools\logs\collect.log 2>&1
+"C:\Users\leeli\AppData\Local\Programs\Python\Python312\python.exe" tools\data_health.py --os-pages 4 >> tools\logs\collect.log 2>&1
+
+"C:\Users\leeli\AppData\Local\Programs\Python\Python312\python.exe" tools\collect_fx.py >> tools\logs\collect.log 2>&1
+"C:\Users\leeli\AppData\Local\Programs\Python\Python312\python.exe" tools\backfill_yf.py --syms ZN,ZF,ZT >> tools\logs\collect.log 2>&1
+"C:\Users\leeli\AppData\Local\Programs\Python\Python312\python.exe" tools\beta_fx.py >> tools\logs\collect.log 2>&1
 rem econ step is best-effort - never fail the scheduled task
 
 exit /b 0
