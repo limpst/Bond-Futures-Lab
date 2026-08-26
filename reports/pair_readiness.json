@@ -1,0 +1,47 @@
+{
+ "asof": "2026-08-26 19:27:53",
+ "pair": "KTB10-ZN",
+ "overlap_bars": 275,
+ "threshold": 1000,
+ "ready": false,
+ "sessions": 6,
+ "span": [
+  "2026-08-24 18:39",
+  "2026-08-26 19:25"
+ ],
+ "bars_per_active_min": 0.77,
+ "eta_min_to_threshold": 941,
+ "beta_applied": 1.0,
+ "beta_mode": "고정 1.0 (표본 부족)",
+ "beta_full_sample": 0.9959,
+ "beta_rolling_last": null,
+ "beta_rolling_sd": 0.3775,
+ "beta_rolling_sd_recent60": null,
+ "beta_window_min": 240,
+ "fx": {
+  "applied": false,
+  "reason": "이 계정 선물옵션 마스터(t8435)에 통화선물 없음 — FX 다리 데이터 소스 미확보 (2026-08-26 프로브)"
+ },
+ "checklist": [
+  {
+   "item": "겹치는 봉 ≥ 1000",
+   "ok": false,
+   "detail": "275 / 1000 · 예상 941분 남음"
+  },
+  {
+   "item": "rolling β 추정",
+   "ok": false,
+   "detail": "문턱 미달 — β=1 사용 중"
+  },
+  {
+   "item": "FX(USDKRW) 조정",
+   "ok": false,
+   "detail": "소스 미확보 — 신호는 성립하나 손익 계산은 미완"
+  },
+  {
+   "item": "duration(DV01) 매칭",
+   "ok": false,
+   "detail": "β 가 대리하지만 정식 DV01 매칭은 미구현"
+  }
+ ]
+}

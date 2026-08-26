@@ -221,6 +221,21 @@ def api_rebuild():
                     [PY, str(ROOT / "tools" / "build_lab_dashboard.py")])
 
 
+@app.get("/api/readiness")
+def api_readiness():
+    """본 pair(KTB10-ZN) 준비도 — 겹침 봉 수 · rolling β · FX 게이트."""
+    f = ROOT / "reports" / "pair_readiness.json"
+    if not f.exists():
+        return JSONResponse({"error": "pair_readiness.json 없음 — beta_fx.py 실행"},
+                            status_code=404)
+    return json.loads(f.read_text(encoding="utf-8"))
+
+
+@app.post("/api/readiness/refresh")
+def api_readiness_refresh():
+    return _run_job("readiness", [PY, str(ROOT / "tools" / "beta_fx.py")])
+
+
 @app.get("/api/jobs")
 def api_jobs():
     with _LOCK:

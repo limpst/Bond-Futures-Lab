@@ -305,6 +305,13 @@ ADMIN_PANE = """
  <div class="badges" id="ad-badges"></div>
 
  <section>
+  <h2><span class="n">A0</span>본 pair 준비도 — 언제 β·FX 를 켤 수 있나</h2>
+  <p class="lead">한·미 10년(KTB10−ZN)은 두 다리가 <b>같은 분에 동시에 찍힌 봉</b>만 쓸 수 있어요.
+   그 수가 문턱을 넘어야 헤지비율 β 를 추정할 수 있습니다 — 그 전에는 β=1 로 두고 정직하게 표시해요.</p>
+  <div class="card" id="ad-ready"><div class="sub">불러오는 중…</div></div>
+ </section>
+
+ <section>
   <h2><span class="n">A</span>지금 살아 있나 — 라이브</h2>
   <p class="lead" id="ad-live-lead">랩 API(127.0.0.1:8010)에 연결되면 30초마다 스스로 갱신돼요.</p>
   <div class="grid g4" id="ad-live"></div>
@@ -630,6 +637,34 @@ function renderHealth(d){
  pv += "</div>";
  setAll("ad-perm", pv);
 }
+function renderReadiness(d){
+ if(!d || d.error){ setAll("ad-ready", "<div class='sub'>"
+   +L("준비도 리포트 없음 — [준비도 갱신] 을 누르세요","no readiness report — press [Refresh readiness]")
+   +"</div>"); return; }
+ var pct = Math.max(0, Math.min(100, 100*d.overlap_bars/d.threshold));
+ var eta = d.eta_min_to_threshold;
+ var etatxt = d.ready ? L("문턱 도달","threshold reached")
+   : (eta ? L("현재 속도로 약 ","at the current rate ~")+Math.round(eta/60*10)/10+L("시간 남음"," h to go")
+          : L("속도 산출 불가","rate unknown"));
+ var h = "<div class='lbl' style='font-size:12px;color:var(--muted)'>"+d.pair
+   + " · "+L("겹치는 봉","overlapping bars")+"</div>"
+   + "<div style='display:flex;align-items:baseline;gap:10px;margin:4px 0 8px'>"
+   + "<span class='mono' style='font-size:28px;font-weight:700'>"+d.overlap_bars.toLocaleString()+"</span>"
+   + "<span class='sub'>/ "+d.threshold.toLocaleString()+" · "+etatxt+"</span></div>"
+   + "<div style='height:8px;border-radius:99px;background:var(--panel2);overflow:hidden'>"
+   + "<div style='height:100%;width:"+pct.toFixed(1)+"%;background:"
+   + (d.ready?"var(--ok)":"var(--amber)")+"'></div></div>"
+   + "<div class='sub' style='margin-top:10px'>β "+L("적용값","applied")+" <b class='mono'>"+d.beta_applied
+   + "</b> ("+d.beta_mode+") · "+L("전체표본","full sample")+" "+d.beta_full_sample
+   + " · rolling sd "+(d.beta_rolling_sd===null?"—":d.beta_rolling_sd)+"</div>";
+ h += "<div class='tblwrap' style='margin-top:10px'><table>";
+ (d.checklist||[]).forEach(function(c){
+  h += "<tr><td class='tx'>"+(c.ok?"🟢":"🟠")+" "+c.item+"</td><td class='tx sub'>"+c.detail+"</td></tr>";
+ });
+ h += "</table></div>";
+ if(d.fx && !d.fx.applied) h += "<div class='warnbox'>FX: "+d.fx.reason+"</div>";
+ setAll("ad-ready", h);
+}
 function renderJobs(d){
  var js=(d&&d.jobs)||[];
  if(!js.length){ setAll("ad-jobs","<tr><td class='tx sub'>"+L("작업 기록 없음","no jobs yet")+"</td></tr>"); return; }
@@ -660,12 +695,12 @@ function renderCollector(d){
 }
 function adminRefresh(){
  var g = function(p){ return api(p).then(function(d){ return d; }).catch(function(){ return null; }); };
- Promise.all([g("/api/live"), g("/api/health"), g("/api/collector"), g("/api/jobs")])
+ Promise.all([g("/api/live"), g("/api/health"), g("/api/collector"), g("/api/jobs"), g("/api/readiness")])
   .then(function(r){
    ADMIN_OK = !!r[0];
    [[false,"#Lkr"],[true,"#Len"]].forEach(function(sc){
     _EN = sc[0]; SCOPE = sc[1];
-    renderLive(r[0]); renderHealth(r[1]); renderCollector(r[2]); renderJobs(r[3]); renderActions();
+    renderReadiness(r[4]); renderLive(r[0]); renderHealth(r[1]); renderCollector(r[2]); renderJobs(r[3]); renderActions();
    });
   });
 }
@@ -673,6 +708,7 @@ function renderActions(){
  // inline onclick 을 쓰지 않는다 — 빌더의 삼중따옴표 템플릿에서 \" 이스케이프가
  // 사라져 JS 가 깨진 적이 있다(2026-08-26). 리스너로 붙이면 그 위험이 없다.
  var defs = [["점검 다시", "Re-check", "/api/health/refresh"],
+             ["준비도 갱신", "Refresh readiness", "/api/readiness/refresh"],
              ["backfill 실행", "Run backfill", "/api/backfill"],
              ["대시보드 재생성", "Rebuild page", "/api/rebuild"]];
  q(SCOPE+" #ad-actions").forEach(function(box){
