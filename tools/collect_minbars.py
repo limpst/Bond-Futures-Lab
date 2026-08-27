@@ -163,6 +163,47 @@ def _now() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _session_start_date(bar: dt.datetime) -> dt.date:
+    """이 봉이 속한 세션의 '거래일'(= 세션이 시작한 날).
+
+    KRX 파생: 주간 09:00~15:45 · 야간 18:00~익일 05:00.
+    야간 후반(00:00~05:59)은 **전날** 세션에 속한다.
+    """
+    if bar.hour < 6:
+        return bar.date() - dt.timedelta(days=1)
+    return bar.date()
+
+
+def _reject_reason(bar_times: list[str]) -> str:
+    """합성한 날짜가 말이 되는지 본다. 이상하면 사유, 멀쩡하면 빈 문자열.
+
+    왜 필요한가 (2026-08-26 사고):
+      t8461 은 날짜 필드를 주지 않아 수집기가 `now` 를 기준으로 날짜를 합성한다.
+      그 기준이 하루 어긋나면 **세션 전체가 통째로 잘못된 날짜에 박힌다**.
+      실제로 08-25 백필이 08-24 야간 세션을 08-23(일요일) 야간으로 적재해,
+      OHLCV 까지 똑같은 유령 세션 711봉이 생겼다. upsert 라 조용히 들어갔고
+      ADF·AR(1)·ECM·전략 성과가 전부 오염됐다(전략 순위가 뒤집혔다).
+
+      한 줄로 잡을 수 있다: **일요일 밤에는 KRX 야간 세션이 없다.**
+      거래일이 토/일이면 그 배치는 통째로 버린다 — 절반만 맞은 데이터보다
+      아예 없는 편이 낫다.
+    """
+    days = set()
+    for s in bar_times:
+        try:
+            days.add(_session_start_date(dt.datetime.strptime(s, "%Y-%m-%d %H:%M")))
+        except ValueError:
+            return "bar_time 파싱 실패: %s" % s[:20]
+    weekend = sorted(d for d in days if d.weekday() >= 5)   # 5=토 6=일
+    if weekend:
+        return ("거래일이 주말로 합성됨 %s — 날짜 기준(now)이 어긋난 배치로 보고 버림"
+                % ", ".join("%s(%s)" % (d, "토일"[d.weekday() - 5]) for d in weekend[:3]))
+    if len(days) > 2:
+        return "한 배치가 거래일 %d개에 걸침 %s — 세션 경계 합성 오류로 보고 버림" % (
+            len(days), sorted(days)[:4])
+    return ""
+
+
 def _log(con, instr_id, tr_cd, rows_in, rows_new, status, detail=""):
     con.execute("INSERT INTO collect_log(ts_utc,instr_id,tr_cd,rows_in,rows_new,status,detail) "
                 "VALUES(?,?,?,?,?,?,?)",
@@ -277,6 +318,8 @@ def do_live(env, minutes: int, count: int) -> int:
                 # 최신 봉이 현재 시각보다 뚜렷이 앞서면 지난 날의 자료다
                 if t0 > (now + dt.timedelta(minutes=2)).strftime("%H%M%S"):
                     sess -= dt.timedelta(days=1)
+            # 1) 먼저 전 봉의 날짜를 합성만 해 둔다 (아직 쓰지 않는다)
+            staged = []
             prev_t = None
             for r in rows:
                 t = str(r.get(f["time"], "")).zfill(6)
@@ -289,7 +332,19 @@ def do_live(env, minutes: int, count: int) -> int:
                         sess -= dt.timedelta(days=1)      # 자정을 거꾸로 넘음
                     prev_t = t
                     d = f"{sess:%Y%m%d}"
-                bar = f"{d[:4]}-{d[4:6]}-{d[6:]} {t[:2]}:{t[2:4]}"
+                staged.append((f"{d[:4]}-{d[4:6]}-{d[6:]} {t[:2]}:{t[2:4]}", r))
+
+            # 2) 합성 결과가 말이 되는지 본다 — 날짜 필드가 없는 채널만 검사한다
+            #    (o3103 은 date 를 주므로 합성하지 않는다)
+            if staged and not f["date"]:
+                why = _reject_reason([b for b, _ in staged])
+                if why:
+                    _log(con, iid, c["tr_cd"], len(rows), 0, "error", "날짜 검증 실패: " + why)
+                    print(f"[live] {iid} ({sym}): 배치 거부 — {why}")
+                    continue
+
+            # 3) 통과한 배치만 쓴다
+            for bar, r in staged:
                 cur = con.execute(
                     "INSERT INTO minbar(instr_id,bar_time,open,high,low,close,volume,symbol,collected_utc) "
                     "VALUES(?,?,?,?,?,?,?,?,?) "

@@ -339,10 +339,135 @@ ADMIN_PANE = """
  </section>
 </div>"""
 
-panes = pane(PAIRS[0], ktb_extra) + pane(PAIRS[1], kus_extra) + ADMIN_PANE
+# ── ⚡ 실시간 시그널 탭 — 여러 pair 를 한 화면에서 z 로 비교 ────────────────
+#   자료: reports/ou_signal.json (tools/ou_signal.py, 5~15분 주기)
+#   단위를 맞춘 spread(원화 손익)라 pair 끼리 나란히 놓고 비교할 수 있다.
+SIG_FILE = ROOT / "reports" / "ou_signal.json"
+SIG = json.loads(SIG_FILE.read_text(encoding="utf-8")) if SIG_FILE.is_file() else {}
+SIG_OK = [p for p in SIG.get("pairs", []) if p.get("status") == "ok" and p.get("chart")]
+
+# 여러 pair 를 겹쳐 그리려면 시간축이 같아야 한다 — 합집합 격자에 얹고 빈 곳은 null.
+_grid = sorted({t for p in SIG_OK for t in p["chart"]["t"]})[-600:]
+_gi = {t: i for i, t in enumerate(_grid)}
+SIG_SERIES = {}
+for p in SIG_OK:
+    row = [None] * len(_grid)
+    for t, z in zip(p["chart"]["t"], p["chart"]["z"]):
+        if t in _gi:
+            row[_gi[t]] = z
+    SIG_SERIES[p["pair"]] = row
+
+PALETTE = ["#3FD0C9", "#F5B84B", "#8C9EFF", "#EF6A5A", "#46C077",
+           "#E879C7", "#7FD1F0", "#C9A26B", "#A3E635", "#FB923C"]
+STALE_MIN = 15          # 이보다 오래된 봉이면 '멈춤' 으로 본다
+
+# 기본 선택: 신선하고 |z| 큰 4개 (없으면 신선한 것부터)
+#   신선한(멈추지 않은) pair 를 먼저, 그 안에서 |z| 큰 순으로 4개까지.
+#   신선한 게 부족하면 덜 오래된 것으로 채운다 — 빈 그래프를 보여주지 않기 위함.
+_ranked = sorted(SIG_OK, key=lambda p: ((p.get("stale_min") or 999) > STALE_MIN,
+                                        p.get("stale_min") or 999,
+                                        -abs(p.get("z_now") or 0)))
+_default = [p["pair"] for p in _ranked[:4]]
+
+
+def _lock_dots(p):
+    order = [("z", "|z| ≥ 2σ"), ("iqr", "IQR 밖"),
+             ("ecm", "ECM t ≤ −1.64"), ("edge", "기대이익 > 비용")]
+    return "".join(
+        f'<span class="dot {"on" if p["locks"].get(k) else "off"}" title="{lbl}"></span>'
+        for k, lbl in order)
+
+
+def _sig_rows():
+    out = []
+    for i, p in enumerate(SIG_OK):
+        st = p.get("stale_min") or 0
+        stale = st > STALE_MIN
+        chk = "checked" if p["pair"] in _default else ""
+        hl = f'{p["half_life_min"]:.0f}분' if p.get("half_life_min") else "—"
+        out.append(
+            f'<tr class="sigrow{" stale" if stale else ""}" data-pair="{p["pair"]}">'
+            f'<td class="tx"><label class="pick"><input type="checkbox" class="pk" '
+            f'data-pair="{p["pair"]}" {chk}>'
+            f'<i style="background:{PALETTE[i % len(PALETTE)]}"></i>'
+            f'<b>{p["pair"]}</b></label></td>'
+            f'<td class="tx sub">{p["label"]}</td>'
+            f'<td>{int(p["edge_krw"]):,}</td>'
+            f'<td>{int(p["cost_krw"]):,}</td>'
+            f'<td class="{"big" if abs(p.get("z_now") or 0) >= 2 else ""}">'
+            f'{(p.get("z_now") or 0):+.2f}</td>'
+            f'<td>{hl}</td><td>{p["ecm_t_hac"]:.2f}</td>'
+            f'<td>{p["hedge_b"]:.3f}</td>'
+            f'<td class="{"warn" if stale else ""}">{st:.0f}분{"⚠" if stale else ""}</td>'
+            f'<td class="tx nowrap">{_lock_dots(p)}</td>'
+            f'<td class="tx">{p["side"] if p.get("ready") else "—"}</td></tr>')
+    for p in SIG.get("pairs", []):
+        if p.get("status") != "ok":
+            out.append(f'<tr class="sigrow off"><td class="tx">{p["pair"]}</td>'
+                       f'<td class="tx sub" colspan="10">{p.get("status", "")}</td></tr>')
+    return "".join(out)
+
+
+SIG_PANE = f"""
+<div class="pane" id="pane-sig" data-pair="sig">
+ <p class="oneline">채권 선물 <b>여러 짝</b>의 가격 차이를 한 화면에서 같이 보고,
+  어느 짝이 지금 <b>평소보다 많이 벌어졌는지</b> 알려주는 화면이에요.
+  아래 표에서 보고 싶은 짝을 <b>체크</b>하면 그림에 겹쳐 그려집니다.</p>
+ <div class="badges">
+  <span class="pill"><i style="background:var(--teal)"></i>pair {len(SIG_OK)}개 계산됨</span>
+  <span class="pill p-warn"><i></i>갱신 {SIG.get("asof", "—")}</span>
+  <span class="pill"><i style="background:var(--faint)"></i>z 창 {SIG.get("window", "—")}봉</span>
+ </div>
+
+ <section>
+  <h2><span class="n">A</span>왜 "그냥 빼기" 가 아닌가 — 단위를 맞춘다</h2>
+  <p class="lead">한국 10년 106.04 에서 미국 10년 108.73 을 빼면 −2.69 예요.
+   그런데 <b>이 숫자는 뜻이 없어요.</b> 한국 선물 1포인트는 100만원이고 미국 선물
+   1포인트는 1,000달러라, 서로 다른 자를 뺀 셈이거든요. 얼마를 벌고 잃는지 말할 수
+   없으면 <b>수수료와 비교할 수도 없어요</b>. 그래서 세 번 맞춥니다.</p>
+  <div class="steps">
+   <div class="step"><span class="no">STEP 1</span><b>계약 가치로</b>
+    <p>가격 × 1포인트 값 → "이 다리 1계약은 지금 얼마짜리인가"</p></div>
+   <div class="step"><span class="no">STEP 2</span><b>같은 돈으로</b>
+    <p>달러 다리는 환율로 원화 환산 → 두 다리가 같은 화폐</p></div>
+   <div class="step"><span class="no">STEP 3</span><b>같은 위험으로</b>
+    <p>만기가 다르면 금리 1bp 에 움직이는 금액이 달라요. 회귀로 헤지비 b 를 구해
+     한쪽을 b 배 잡습니다. 안 맞추면 남는 건 스프레드가 아니라 <b>금리 방향 베팅</b></p></div>
+  </div>
+  <div class="warnbox">그 결과 <b>편차(원)</b> 은 진짜 돈입니다 — 되돌아오면 그만큼
+   벌고, 비용(수수료+호가)보다 커야 들어갈 값어치가 있어요.
+   ⚠️ 환헤지는 하지 않으므로 환율 변동이 섞여 있습니다.</div>
+ </section>
+
+ <section>
+  <h2><span class="n">B</span>여러 짝을 겹쳐 보기 — z-score</h2>
+  <div class="card chartbox"><canvas id="sig-z" height="260"></canvas>
+   <div class="legend" id="sig-legend"></div></div>
+  <p class="sub" style="margin-top:8px">붉은 띠 = ±2σ. 선이 띠에 들어가면 "많이 벌어졌다"
+   — 다만 그것만으로는 진입이 아니고, 아래 자물쇠 4개가 다 열려야 후보입니다.</p>
+ </section>
+
+ <section>
+  <h2><span class="n">C</span>짝별 상세 — 체크해서 위 그림에 올리기</h2>
+  <div class="card tblwrap"><table class="sigtbl">
+   <tr><th class="tx">pair</th><th class="tx">구성</th><th>편차(원)</th><th>비용(원)</th>
+    <th>z</th><th>half-life</th><th>t_HAC</th><th>헤지비 b</th><th>지연</th>
+    <th class="tx">자물쇠</th><th class="tx">후보</th></tr>
+   {_sig_rows()}
+  </table></div>
+  <div class="warnbox">자물쇠 순서: <b>|z|≥2 · IQR 밖 · ECM 통과 · 기대이익&gt;비용</b>.
+   ● 열림 / ○ 닫힘 — <b>넷 다</b> 열려야 후보입니다.
+   지연 {STALE_MIN}분 초과(⚠)는 수집이 멈춘 짝이라 z 를 믿으면 안 됩니다.</div>
+ </section>
+</div>"""
+
+panes = (pane(PAIRS[0], ktb_extra) + pane(PAIRS[1], kus_extra)
+         + SIG_PANE + ADMIN_PANE)
 tabs = "".join(
     f'<button class="tab{" on" if i == 0 else ""}" data-go="{P["key"]}">'
     f'<b>{P["tab"]}</b><span>{P["title"]}</span></button>' for i, P in enumerate(PAIRS))
+tabs += ('<button class="tab" data-go="sig"><b>⚡ 실시간 시그널</b>'
+         '<span>여러 pair 동시 비교</span></button>')
 tabs += ('<button class="tab" data-go="admin"><b>⚙️ 운영·관리자</b>'
          '<span>데이터 건강 · backfill · 라이브</span></button>')
 
@@ -380,6 +505,19 @@ nav{display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--line);
 .tab.on b{color:var(--amber)}
 .tab:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .pane{display:none} .pane.on{display:block}
+.pick{display:inline-flex;align-items:center;gap:7px;cursor:pointer;user-select:none}
+.pick input{accent-color:var(--amber);width:14px;height:14px;cursor:pointer}
+.pick i{width:10px;height:10px;border-radius:2px;flex:none}
+.sigtbl td,.sigtbl th{padding:7px 10px}
+.sigrow.stale{opacity:.5} .sigrow.off{opacity:.4}
+.sigtbl td.big{color:var(--amber);font-weight:700}
+.sigtbl td.warn{color:var(--crit)}
+.nowrap{white-space:nowrap}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3px}
+.dot.on{background:var(--ok)} .dot.off{background:#2A3446;border:1px solid var(--line)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:11.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{width:12px;height:3px;border-radius:2px}
 section{margin-top:34px}
 h2{font-size:19px;font-weight:700;margin-bottom:4px}
 h2 .n{color:var(--faint);font-family:"IBM Plex Mono",monospace;font-size:14px;margin-right:8px}
@@ -513,6 +651,9 @@ __PANES__
 </div>
 <script>
 const PAIRS = __PAIRDATA__;
+const SIGGRID = __SIGGRID__;
+const SIGSERIES = __SIGSERIES__;
+const SIGCOLOR = __SIGCOLOR__;
 function draw(cv, vals, labels, opts){
  const dpr=window.devicePixelRatio||1;
  const W=cv.clientWidth, H=parseInt(cv.getAttribute("height"),10);
@@ -548,14 +689,74 @@ function draw(cv, vals, labels, opts){
  for(let i=1;i<N;i++) x.lineTo(X(i),Y(vals[i])); x.stroke();
  x.fillStyle=opts.color; x.beginPath(); x.arc(X(N-1),Y(vals[N-1]),3.4,0,7); x.fill();
 }
+// ── ⚡ 여러 pair 를 한 축에 겹쳐 그리기 (multicum 식) ─────────────────────
+// 시간축은 Python 이 만든 합집합 격자(SIGGRID). 빈 값은 null 이라 선을 끊는다.
+function drawMulti(cv, labels, series, band){
+ const dpr=window.devicePixelRatio||1;
+ const W=cv.clientWidth, H=parseInt(cv.getAttribute("height"),10);
+ if(!W) return;
+ cv.width=W*dpr; cv.height=H*dpr; cv.style.height=H+"px";
+ const x=cv.getContext("2d"); x.setTransform(dpr,0,0,dpr,0,0);
+ x.clearRect(0,0,W,H);
+ const padL=44,padR=14,padT=12,padB=22;
+ let lo=-band*1.2, hi=band*1.2;
+ series.forEach(s=>s.v.forEach(v=>{ if(v!==null){ lo=Math.min(lo,v); hi=Math.max(hi,v);} }));
+ const pad=(hi-lo)*.06||.5; lo-=pad; hi+=pad;
+ const N=labels.length, X=i=>padL+(W-padL-padR)*(N<2?0:i/(N-1));
+ const Y=v=>padT+(H-padT-padB)*(1-(v-lo)/(hi-lo));
+ x.font="10.5px 'IBM Plex Mono',monospace"; x.fillStyle="#5A6478"; x.strokeStyle="#232B3A";
+ for(let k=0;k<=4;k++){ const v=lo+(hi-lo)*k/4;
+  x.beginPath(); x.moveTo(padL,Y(v)); x.lineTo(W-padR,Y(v)); x.stroke();
+  x.textAlign="right"; x.fillText(v.toFixed(1),padL-7,Y(v)+3.5); }
+ x.textAlign="center";
+ for(let k=0;k<5;k++){ const i=Math.round(k*(N-1)/4); x.fillText(labels[i]||"",X(i),H-6); }
+ // ±2σ 진입 띠
+ x.fillStyle="rgba(239,106,90,.09)";
+ x.fillRect(padL,padT,W-padL-padR,Math.max(0,Y(band)-padT));
+ x.fillRect(padL,Y(-band),W-padL-padR,Math.max(0,H-padB-Y(-band)));
+ x.strokeStyle="rgba(239,106,90,.45)"; x.setLineDash([4,4]);
+ [band,-band].forEach(b=>{ x.beginPath(); x.moveTo(padL,Y(b)); x.lineTo(W-padR,Y(b)); x.stroke(); });
+ x.setLineDash([]);
+ x.strokeStyle="#2A3446"; x.beginPath(); x.moveTo(padL,Y(0)); x.lineTo(W-padR,Y(0)); x.stroke();
+ series.forEach(s=>{
+  x.strokeStyle=s.color; x.lineWidth=1.6; x.beginPath();
+  let pen=false, last=-1;
+  for(let i=0;i<N;i++){
+   const v=s.v[i];
+   if(v===null){ pen=false; continue; }
+   if(!pen){ x.moveTo(X(i),Y(v)); pen=true; } else x.lineTo(X(i),Y(v));
+   last=i;
+  }
+  x.stroke();
+  if(last>=0){ x.fillStyle=s.color; x.beginPath(); x.arc(X(last),Y(s.v[last]),3.2,0,7); x.fill(); }
+ });
+}
+function renderSig(){
+ // KR/EN 두 벌의 패널이 같은 id 를 갖는다. getElementById 로 잡으면 첫 번째만
+ // 그려지고, querySelectorAll(".pk:checked") 는 양쪽을 다 긁어 같은 선을 두 번
+ // 그린다(2026-08-27 실측: 범례에 KTB3-KTB10 이 두 번). 보이는 패널로 한정한다.
+ document.querySelectorAll('.pane.on[data-pair="sig"]').forEach(pane=>{
+  const cv=pane.querySelector("canvas"); if(!cv) return;
+  const picked=[...pane.querySelectorAll(".pk:checked")].map(e=>e.dataset.pair);
+  const series=picked.map(p=>({color:SIGCOLOR[p]||"#8B95A7", v:SIGSERIES[p]||[]}))
+                     .filter(s=>s.v.length);
+  drawMulti(cv, SIGGRID, series, 2);
+  const lg=pane.querySelector(".legend");
+  if(lg) lg.innerHTML = picked.length
+    ? picked.map(p=>`<span><i style="background:${SIGCOLOR[p]||"#8B95A7"}"></i>${p}</span>`).join("")
+    : '<span style="color:var(--faint)">아래 표에서 짝을 체크하세요</span>';
+ });
+}
 function render(){
  document.querySelectorAll(".pane.on").forEach(p=>{
+  if(p.dataset.pair==="sig"){ renderSig(); return; }
   const P=PAIRS[p.dataset.pair]; if(!P||!P.chart) return;
   const cs=p.querySelector(".cs"), cz=p.querySelector(".cz");
   if(cs) draw(cs,P.chart.s,P.chart.t,{color:"#3FD0C9",fill:"rgba(63,208,201,.16)",dec:2,mu:P.chart.mu});
   if(cz) draw(cz,P.chart.z,P.chart.t,{color:"#F5B84B",fill:"rgba(245,184,75,.14)",dec:1,band:2});
  });
 }
+document.addEventListener("change", e=>{ if(e.target.classList.contains("pk")) renderSig(); });
 function go(key){
  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.go===key));
  document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("on",p.dataset.pair===key));
@@ -563,7 +764,14 @@ function go(key){
  render();
 }
 document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>go(t.dataset.go)));
-go(PAIRS[location.hash.slice(1)] ? location.hash.slice(1) : "ktb");
+// 해시로 탭을 지정할 수 있어야 링크를 그대로 공유할 수 있다.
+// (예전 코드는 PAIRS 에 있는 키만 인정해 #sig · #admin 이 무시됐다)
+function hashKey(){
+ const k=location.hash.slice(1);
+ return document.querySelector('.pane[data-pair="'+k+'"]') ? k : "ktb";
+}
+go(hashKey());
+addEventListener("hashchange", ()=>go(hashKey()));   // 뒤로가기·해시 링크 대응
 addEventListener("resize", render);
 
 // ── ⚙️ 운영·관리자: 라이브 폴링 + 데이터 건강 + 관리 작업 ───────────────
@@ -754,6 +962,11 @@ rep = {
     "__THU__": fmt(U.get("t_hac"), 2, False),
     "__ADFSTAT__": f"{adf['stat']:.2f}", "__ADFP__": f"{adf['p']:.3f}",
     "__PAIRDATA__": json.dumps({P["key"]: P for P in PAIRS}, ensure_ascii=False),
+    "__SIGGRID__": json.dumps(_grid, ensure_ascii=False),
+    "__SIGSERIES__": json.dumps(SIG_SERIES, ensure_ascii=False),
+    "__SIGCOLOR__": json.dumps(
+        {p["pair"]: PALETTE[i % len(PALETTE)] for i, p in enumerate(SIG_OK)},
+        ensure_ascii=False),
 }
 html = HTML
 for k, v in rep.items():

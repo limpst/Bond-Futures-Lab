@@ -1,13 +1,16 @@
 # 📜 변경 이력 (CHANGELOG)
 
 > `python tools/gen_changelog.py` 로 **git 이력에서 자동 생성**합니다 — 손으로 고치지 마세요.
-> 커밋 20건 · 변경 파일 137건 · 최신 2026-08-26 23:24
+> 커밋 21건 · 변경 파일 141건 · 최신 2026-08-26 23:46
 
 각 줄의 뜻: `유형 · 제목` / `해시 · 시각 · 파일수 (+추가/−삭제)` / 건드린 영역.
 **왜 그렇게 했나**는 커밋 본문에 있습니다 — `git show <해시>` 로 보세요.
 
 ## 2026-08-26
 
+- **문서** · docs: README as the work hub - motivation, algorithm, methodology, literature, tracking
+  - `6689c8a` · 23:46 · 4개 파일 (+425/−55) · README.md(1), docs(1), tools(2)
+  - - Motivation: why this lab exists (three concrete reasons) and what it
 - **기능** · feat(lab): RV lab + RRL(direct RL) + Bayesian pair — 헤지비 감쇠를 정량화
   - `78f5262` · 23:24 · 6개 파일 (+1202/−5) · tools(6)
   - 세 가지를 추가하고, 그 결과로 지금까지의 실패 원인이 특정됐다.

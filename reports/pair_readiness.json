@@ -1,61 +1,61 @@
 {
- "asof": "2026-08-26 20:01:08",
+ "asof": "2026-08-27 13:02:30",
  "pair": "KTB10-ZN",
- "overlap_bars": 1771,
+ "overlap_bars": 2504,
  "threshold": 1000,
  "ready": false,
  "enough_bars": true,
  "beta_stable": false,
  "beta_sd_max": 0.1,
- "sessions": 5,
+ "sessions": 6,
  "span": [
   "2026-08-24 18:01",
-  "2026-08-26 20:00"
+  "2026-08-27 12:53"
  ],
  "bars_per_active_min": 0.9,
  "eta_min_to_threshold": null,
  "beta_applied": 1.0,
- "beta_mode": "고정 1.0 (β 불안정 — sd 0.794 > 0.10)",
- "beta_full_sample": 1.0321,
- "beta_rolling_last": 1.853,
- "beta_rolling_sd": 0.9562,
- "beta_rolling_sd_recent60": 0.7937,
+ "beta_mode": "고정 1.0 (β 불안정 — sd 0.277 > 0.10)",
+ "beta_full_sample": 0.6265,
+ "beta_rolling_last": 2.8077,
+ "beta_rolling_sd": 1.3512,
+ "beta_rolling_sd_recent60": 0.277,
  "beta_window_min": 240,
  "fx": {
   "have_data": true,
   "applied": false,
-  "bars": 8976,
+  "bars": 9941,
   "span": [
    "2026-08-18 08:00",
-   "2026-08-26 19:54"
+   "2026-08-27 12:07"
   ],
   "sources": [
    "yfinance:KRW=X"
   ],
-  "triple_overlap": 1743,
-  "data_detail": "8,976봉 (2026-08-18 08:00 ~ 2026-08-26 19:54) · pair 와 3중 겹침 1,743분 · 출처 yfinance:KRW=X",
+  "triple_overlap": 2469,
+  "data_detail": "9,941봉 (2026-08-18 08:00 ~ 2026-08-27 12:07) · pair 와 3중 겹침 2,469분 · 출처 yfinance:KRW=X",
   "reason": "데이터는 있으나 손익 환산식에 아직 적용하지 않음 — 신호(금리 상대가치)는 FX 없이도 성립하지만 손익은 FX 없이 틀린다"
  },
  "checklist": [
   {
    "item": "겹치는 봉 ≥ 1000",
    "ok": true,
-   "detail": "1771 / 1000"
+   "detail": "2504 / 1000"
   },
   {
    "item": "rolling β 안정성 (최근60 sd ≤ 0.10)",
    "ok": false,
-   "detail": "sd 0.794 — 아직 노이즈, β=1 유지"
+   "detail": "sd 0.277 — 아직 노이즈, β=1 유지"
   },
   {
    "item": "rolling β 값",
    "ok": false,
-   "detail": "β=1.853 (창 240분) · 전체표본 β=1.032"
+   "detail": "β=2.808 (창 240분) · 전체표본 β=0.626"
   },
   {
    "item": "FX(USDKRW) 데이터",
    "ok": true,
-   "detail": "8,976봉 (2026-08-18 08:00 ~ 2026-08-26 19:54) · pair 와 3중 겹침 1,743분 · 출처 yfinance:KRW=X"
+   "detail": "9,941봉 (2026-08-18 08:00 ~ 2026-08-27 12:07) · pair 와 3중 겹침 2,469분 · 출처 yfinance:KRW=X"
   },
   {
    "item": "FX 손익 환산 적용",

@@ -153,57 +153,89 @@ async def collect(minutes: int, dry: bool) -> int:
     if not tg:
         print("instrument 테이블에 CME 활성 종목이 없습니다.")
         return 1
-    con.execute("INSERT INTO meta(k,v) VALUES('cme_bar_timezone','KST (kordate+kortm) "
-                "— KTB 와 같은 시계로 pair 를 만들기 위함')"
-                " ON CONFLICT(k) DO UPDATE SET v=excluded.v")
-    con.commit()
+    # 이 meta 한 줄 때문에 수집이 죽으면 안 된다 — 자료가 아니라 메모다.
+    # 다른 수집기가 쓰기 트랜잭션을 붙들고 있으면 여기서 'database is locked'
+    # 가 나고, 예전 코드는 그대로 종료됐다(2026-08-27 실측: backfill 이 락을
+    # 잡은 사이 CME 수집기가 시작조차 못 함). 실패해도 수집은 계속한다.
+    try:
+        con.execute("INSERT INTO meta(k,v) VALUES('cme_bar_timezone','KST (kordate+kortm) "
+                    "— KTB 와 같은 시계로 pair 를 만들기 위함')"
+                    " ON CONFLICT(k) DO UPDATE SET v=excluded.v")
+        con.commit()
+    except sqlite3.Error as e:
+        print("  (meta 기록 건너뜀 — %s)" % str(e)[:80])
 
     print("CME 1분봉 수집 · %d분 · 대상 %d종: %s"
           % (minutes, len(tg), " ".join(sorted(tg))))
     if dry:
         print("(dry-run — DB 에 쓰지 않습니다)")
 
-    tok = issue_token(CHANNEL)
     bars = Bars()
     n_tick = n_saved = 0
     end = asyncio.get_event_loop().time() + minutes * 60
+    backoff = 3
     try:
-        async with websockets.connect(WS_URL, ping_interval=20, close_timeout=5) as ws:
-            for sym in sorted(tg):
-                await ws.send(json.dumps({
-                    "header": {"token": tok, "tr_type": "3"},
-                    "body": {"tr_cd": TR, "tr_key": sym.ljust(8)}}))
-                await asyncio.sleep(0.2)
-            print("구독 완료 — 수신 시작 (Ctrl+C 로 중단, 진행 봉은 저장됩니다)")
-            while asyncio.get_event_loop().time() < end:
-                left = end - asyncio.get_event_loop().time()
-                try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=min(30, max(1, left)))
-                except asyncio.TimeoutError:
-                    continue
-                try:
-                    m = json.loads(raw)
-                except ValueError:
-                    continue
-                b = m.get("body") or {}
-                sym = str(b.get("symbol") or "").strip()
-                if sym not in tg or "curpr" not in b:
-                    continue
-                px = _f(b.get("curpr"))
-                if px is None:
-                    continue
-                kd = str(b.get("kordate") or "").strip()      # YYYYMMDD (KST)
-                kt = str(b.get("kortm") or "").strip()        # HHMMSS  (KST)
-                if len(kd) != 8 or len(kt) < 4:
-                    continue
-                bar_key = "%s-%s-%s %s:%s" % (kd[:4], kd[4:6], kd[6:8], kt[:2], kt[2:4])
-                n_tick += 1
-                done = bars.add(tg[sym], sym, bar_key, px, _f(b.get("totq")))
-                if done:
-                    n_saved += save(con, [done], dry)
-                    print("  %-5s %s  O=%s H=%s L=%s C=%s V=%.0f"
-                          % (done["instr_id"], done["bar_time"], done["open"],
-                             done["high"], done["low"], done["close"], done["volume"]))
+        while asyncio.get_event_loop().time() < end:
+            try:
+                # ★ 매 접속마다 토큰을 강제 재발급한다 (2026-08-27).
+                #   LS access token 은 하루 단위로 죽고, expires_in 을 그대로
+                #   믿을 수 없다(ls_openapi.call_tr 의 IGW00121 주석 참고).
+                #   REST 는 거부당하면 재발급 훅이 돌지만 WebSocket 은 그런
+                #   훅이 없어 조용히 끊긴다 — 08-24·08-25·08-26 사흘 연속
+                #   야간 수집이 정확히 여기서 멈췄다(최대 965분 결측).
+                tok = issue_token(CHANNEL, force=True)
+                async with websockets.connect(WS_URL, ping_interval=20,
+                                              close_timeout=5) as ws:
+                    for sym in sorted(tg):
+                        await ws.send(json.dumps({
+                            "header": {"token": tok, "tr_type": "3"},
+                            "body": {"tr_cd": TR, "tr_key": sym.ljust(8)}}))
+                        await asyncio.sleep(0.2)
+                    print("구독 완료 — 수신 시작 (Ctrl+C 로 중단, 진행 봉은 저장됩니다)")
+                    backoff = 3
+                    while asyncio.get_event_loop().time() < end:
+                        left = end - asyncio.get_event_loop().time()
+                        try:
+                            raw = await asyncio.wait_for(ws.recv(),
+                                                         timeout=min(30, max(1, left)))
+                        except asyncio.TimeoutError:
+                            continue
+                        try:
+                            m = json.loads(raw)
+                        except ValueError:
+                            continue
+                        b = m.get("body") or {}
+                        sym = str(b.get("symbol") or "").strip()
+                        if sym not in tg or "curpr" not in b:
+                            continue
+                        px = _f(b.get("curpr"))
+                        if px is None:
+                            continue
+                        kd = str(b.get("kordate") or "").strip()   # YYYYMMDD (KST)
+                        kt = str(b.get("kortm") or "").strip()     # HHMMSS  (KST)
+                        if len(kd) != 8 or len(kt) < 4:
+                            continue
+                        bar_key = "%s-%s-%s %s:%s" % (kd[:4], kd[4:6], kd[6:8],
+                                                      kt[:2], kt[2:4])
+                        n_tick += 1
+                        done = bars.add(tg[sym], sym, bar_key, px, _f(b.get("totq")))
+                        if done:
+                            n_saved += save(con, [done], dry)
+                            print("  %-5s %s  O=%s H=%s L=%s C=%s V=%.0f"
+                                  % (done["instr_id"], done["bar_time"], done["open"],
+                                     done["high"], done["low"], done["close"],
+                                     done["volume"]))
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                if asyncio.get_event_loop().time() >= end:
+                    break
+                # 진행 중이던 봉을 흘리지 않는다 — 재접속 전에 flush
+                n_saved += save(con, bars.flush(), dry)
+                print("  연결 끊김 (%s) — %d초 후 재접속(토큰 재발급)"
+                      % (str(e)[:60], backoff))
+                await asyncio.sleep(backoff)
+                backoff = min(60, backoff * 2)
     except KeyboardInterrupt:
         print("\n중단 요청 — 진행 중인 봉을 저장합니다")
     finally:
