@@ -2,7 +2,7 @@
 
 > **성격** 개인 계좌 · 소액 · 학습 목적 — **회사 PoC 와 분리된 별도 프로젝트** (2026-08-23 개설)
 > **범위** 시세 수집 · 계량 검정 · 백테스트 · 시그널까지. **자동 주문 실행 코드는 이 저장소에 만들지 않는다.** 주문은 사람이 HTS/MTS 에서 직접 한다.
-> **저장소** `github.com/leehy-hash/bond-futures-lab` (**private**) · 브랜치 `master`
+> **저장소** `github.com/limpst/Bond-Futures-Lab` (**private**) · 브랜치 `master`
 > **데이터** LS증권 Open API (국내·해외 선물옵션) + yfinance (CME 복구·FX) · 자격증명은 `.env.ls` (git 제외)
 
 ---
