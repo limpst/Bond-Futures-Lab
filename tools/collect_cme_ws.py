@@ -75,11 +75,20 @@ def open_db() -> sqlite3.Connection:
     return c
 
 
-def targets(con) -> dict[str, str]:
-    """symbol -> instr_id (CME 활성 종목)."""
+# 이 수집기가 담당하는 시장. 전부 같은 TR(OVC) 한 줄로 들어오므로 거래소가
+# 늘어도 코드가 갈라지지 않는다. EUREX 는 2026-08-27 실측으로 추가
+# (FGBL 124.00 · FGBM 113.72 · FGBS 105.445 수신 확인 — probe_g7_bonds_ws.py).
+WS_MARKETS = ("CME", "EUREX")
+_MK = ",".join("'%s'" % m for m in WS_MARKETS)
+
+
+def targets(con, markets=WS_MARKETS) -> dict[str, str]:
+    """symbol -> instr_id (해외 WS 활성 종목)."""
+    q = ",".join("?" * len(markets))
     return {r["symbol"]: r["instr_id"] for r in con.execute(
         "SELECT instr_id, symbol FROM instrument "
-        "WHERE market='CME' AND active=1 AND symbol IS NOT NULL")}
+        "WHERE market IN (%s) AND active=1 AND symbol IS NOT NULL" % q,
+        tuple(markets))}
 
 
 def _f(x):
@@ -151,7 +160,8 @@ async def collect(minutes: int, dry: bool) -> int:
     con = open_db()
     tg = targets(con)
     if not tg:
-        print("instrument 테이블에 CME 활성 종목이 없습니다.")
+        print("instrument 테이블에 해외 WS 활성 종목이 없습니다 (%s)."
+              % ", ".join(WS_MARKETS))
         return 1
     # 이 meta 한 줄 때문에 수집이 죽으면 안 된다 — 자료가 아니라 메모다.
     # 다른 수집기가 쓰기 트랜잭션을 붙들고 있으면 여기서 'database is locked'
@@ -165,8 +175,8 @@ async def collect(minutes: int, dry: bool) -> int:
     except sqlite3.Error as e:
         print("  (meta 기록 건너뜀 — %s)" % str(e)[:80])
 
-    print("CME 1분봉 수집 · %d분 · 대상 %d종: %s"
-          % (minutes, len(tg), " ".join(sorted(tg))))
+    print("해외 1분봉 수집(%s) · %d분 · 대상 %d종: %s"
+          % ("+".join(WS_MARKETS), minutes, len(tg), " ".join(sorted(tg))))
     if dry:
         print("(dry-run — DB 에 쓰지 않습니다)")
 
@@ -249,7 +259,8 @@ async def collect(minutes: int, dry: bool) -> int:
     print("\ntick %d건 · 저장 %d봉" % (n_tick, n_saved))
     for r in con.execute(
             "SELECT instr_id, COUNT(*) n, MIN(bar_time) a, MAX(bar_time) b FROM minbar "
-            "WHERE instr_id IN (SELECT instr_id FROM instrument WHERE market='CME') "
+            "WHERE instr_id IN (SELECT instr_id FROM instrument "
+            "                   WHERE market IN (" + _MK + ")) "
             "GROUP BY instr_id ORDER BY instr_id"):
         print("  %-5s %4d봉  %s ~ %s" % (r["instr_id"], r["n"], r["a"], r["b"]))
     return 0

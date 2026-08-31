@@ -92,9 +92,9 @@ G7_ROOTS = [
 ]
 
 # 2026-08 말은 U26(9월) -> Z26(12월) 롤 구간. Eurex 는 U26 수신이 확인돼 U26 만.
-MONTHS = {"DE": ["U26"], "FR": ["U26", "Z26"], "IT": ["U26", "Z26"],
-          "US": ["U26", "Z26"], "UK": ["U26", "Z26"],
-          "JP": ["U26", "Z26"], "CA": ["U26", "Z26"]}
+# 2026-08-31 실측: FGBLU26 123.54 vs FGBLZ26 122.70 — U26 이 아직 front 다.
+# 다만 Eurex 9월물 최종거래일이 09-08 이라 곧 롤한다. 전 국가 둘 다 던진다.
+MONTHS = {c: ["U26", "Z26"] for c in ("US", "DE", "FR", "IT", "UK", "JP", "CA")}
 
 CANDIDATES = [(r + m, c, "%s (%s)" % (n, m))
               for r, c, n in G7_ROOTS for m in MONTHS[c]]
@@ -107,6 +107,29 @@ CORDER = ["US", "DE", "FR", "IT", "UK", "JP", "CA", "MANUAL"]
 def now_kst() -> str:
     return dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).strftime(
         "%Y-%m-%d %H:%M:%S")
+
+
+async def run_batched(syms, seconds: int, batch: int) -> dict:
+    """후보를 batch 종씩 끊어 **순차로** 구독한다.
+
+    왜 끊나 (2026-08-27 실측): 54종을 한 연결에 걸었을 때 독일이 0 이었는데
+    3분 뒤 같은 심볼을 6종으로 걸자 정상 수신됐다. rsp_cd 는 양쪽 다 00000.
+    초과 구독이 조용히 버려지는 것으로 보인다 — 한 번에 다 걸면 누락이 난다.
+    """
+    merged: dict = {}
+    groups = [syms[i:i + batch] for i in range(0, len(syms), batch)]
+    for i, g in enumerate(groups, 1):
+        print("── 배치 %d/%d (%d종): %s"
+              % (i, len(groups), len(g), " ".join(x[0] for x in g)))
+        try:
+            merged.update(await run(g, seconds))
+        except Exception as e:
+            print("   배치 실패 — %s" % str(e)[:120])
+            for sym, grp, note in g:
+                merged.setdefault(sym, {"grp": grp, "note": note, "rsp_cd": None,
+                                        "rsp_msg": "batch failed", "ticks": 0,
+                                        "last_px": None, "last_tm": None})
+    return merged
 
 
 async def run(syms, seconds: int) -> dict:
@@ -207,7 +230,10 @@ def verdict(state: dict) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("symbols", nargs="*")
-    ap.add_argument("--seconds", type=int, default=120)
+    ap.add_argument("--seconds", type=int, default=120,
+                    help="배치 1개당 수신 시간(초)")
+    ap.add_argument("--batch", type=int, default=8,
+                    help="한 연결에 거는 종목 수. 0 이면 한 번에 전부 (한도 위험)")
     ap.add_argument("--json", default="")
     a = ap.parse_args()
 
@@ -216,7 +242,13 @@ def main() -> int:
     print("G7 국채선물 WebSocket 프로브 - %d종 / %d초 (조회 전용)"
           % (len(syms), a.seconds))
     try:
-        state = asyncio.run(run(syms, a.seconds))
+        if a.batch and a.batch < len(syms):
+            print("배치 %d종씩 · 총 %d배치 · 예상 %d분"
+                  % (a.batch, -(-len(syms) // a.batch),
+                     -(-len(syms) // a.batch) * a.seconds // 60))
+            state = asyncio.run(run_batched(syms, a.seconds, a.batch))
+        else:
+            state = asyncio.run(run(syms, a.seconds))
     except Exception as e:
         print("실패: %s" % str(e)[:300])
         return 1

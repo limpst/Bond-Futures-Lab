@@ -51,6 +51,9 @@ KRX_MON = {1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8",
 CME_MON = {3: "H", 6: "M", 9: "U", 12: "Z"}
 KRX_PROD = {"KTB3": "65", "KTB5": "66", "KTB10": "67", "KTB30": "70"}
 CME_PROD = {"ZT": "ZT", "ZF": "ZF", "ZN": "ZN", "ZB": "ZB", "TN": "TN"}
+# EUREX 독일 국채선물 — 코드 규칙은 CME 와 같은 <root><월문자><연2자리>.
+# 2026-08-27 WS 실측으로 수신 확인 (FGBL·FGBM·FGBS). FGBX(Buxl)는 tick 0 이라 제외.
+EUREX_PROD = {"FGBS": "FGBS", "FGBM": "FGBM", "FGBL": "FGBL"}
 
 ROLL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS roll_event(
@@ -91,6 +94,27 @@ def cme_first_notice(year: int, month: int) -> dt.date:
     """CME 채권선물 최초인도통지일 = 인도월 직전월의 마지막 영업일."""
     y, m = (year - 1, 12) if month == 1 else (year, month - 1)
     return last_business_day(y, m)
+
+
+def eurex_last_trading(year: int, month: int) -> dt.date:
+    """Eurex 채권선물 최종거래일.
+
+    Eurex 규칙: 인도일 = 인도월 **10일**(거래일이 아니면 다음 거래일),
+    최종거래일 = 인도일의 **2 거래일 전**. CME 의 '직전월 마지막 영업일'
+    과 다르므로 별도 함수로 둔다 — 섞으면 롤이 이틀씩 어긋난다.
+    (검산: 2026-09 인도 → 9/10 목 인도일 → 최종거래일 9/8 화)
+
+    주의: 공휴일은 반영하지 않는다(주말만). 최종거래일이 공휴일과 겹치면
+    실제보다 늦게 잡히므로, ROLL_DAYS 여유가 그 오차를 흡수한다.
+    """
+    d = dt.date(year, month, 10)
+    while d.weekday() >= 5:                 # 인도일이 주말이면 다음 거래일
+        d += dt.timedelta(days=1)
+    for _ in range(2):                      # 2 거래일 전
+        d -= dt.timedelta(days=1)
+        while d.weekday() >= 5:
+            d -= dt.timedelta(days=1)
+    return d
 
 
 def busdays_between(a: dt.date, b: dt.date) -> int:
@@ -163,6 +187,12 @@ def decide(instr_id: str, market: str, symbol: str, today: dt.date,
         expiry = third_tuesday(cy, cm)
         ny, nm = next_quarter(cy, cm)
         nxt = krx_code(instr_id, ny, nm)
+    elif market == "EUREX":
+        # 코드 규칙은 CME 와 동일하지만 **만기 규칙이 다르다** (위 함수 주석 참조).
+        cy, cm = cme_parse(symbol)
+        expiry = eurex_last_trading(cy, cm)
+        ny, nm = next_quarter(cy, cm)
+        nxt = "%s%s%02d" % (EUREX_PROD[instr_id], CME_MON[nm], ny % 100)
     else:
         cy, cm = cme_parse(symbol)
         expiry = cme_first_notice(cy, cm)
@@ -174,7 +204,7 @@ def decide(instr_id: str, market: str, symbol: str, today: dt.date,
            "expiry": expiry.isoformat(), "busdays_left": left,
            "roll": False, "reason": "none", "vol_cur": None, "vol_next": None}
 
-    # ① 거래량 — KRX 만 관측 가능 (CME 는 REST 조회 범위 밖)
+    # ① 거래량 — KRX 만 관측 가능 (CME·EUREX 는 REST 조회 범위 밖이라 캘린더만)
     if market == "KRX" and use_api:
         vc, vn = krx_volume(symbol), krx_volume(nxt)
         out["vol_cur"], out["vol_next"] = vc, vn
@@ -323,13 +353,14 @@ def main() -> int:
                        "WHERE active=1 ORDER BY market, instr_id").fetchall()
     todo = []
     for iid, mkt, sym in rows:
-        if (mkt == "KRX" and iid not in KRX_PROD) or (mkt == "CME" and iid not in CME_PROD):
-            print("   %-6s %-4s %-9s 스킵(상품코드 미등록)" % (iid, mkt, sym)); continue
+        _known = {"KRX": KRX_PROD, "CME": CME_PROD, "EUREX": EUREX_PROD}
+        if mkt not in _known or iid not in _known[mkt]:
+            print("   %-6s %-5s %-9s 스킵(상품코드 미등록)" % (iid, mkt, sym)); continue
         d = decide(iid, mkt, sym, today, use_api=not a.no_api)
         vol = ""
         if d["vol_cur"] is not None or d["vol_next"] is not None:
             vol = " 거래량 %s→%s" % (d["vol_cur"], d["vol_next"])
-        print("   %-6s %-4s %-9s → %-9s 만기 %s (영업일 %+d)%s  %s"
+        print("   %-6s %-5s %-9s → %-9s 만기 %s (영업일 %+d)%s  %s"
               % (iid, mkt, d["cur"], d["next"], d["expiry"], d["busdays_left"], vol,
                  ("★ 롤 필요 (%s)" % d["reason"]) if d["roll"] else "유지"))
         if d["roll"]:
